@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "map_kind": "discovery",
+  "map_status": "unverified",
+  "generated_at": null,
+  "modules": {
+    "operating_report": {
+      "module": "operating_report",
+      "request_url": null,
+      "method": null,
+      "payload_schema": null,
+      "response_schema": null,
+      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
+      "can_call_from_any_ebooking_page": null,
+      "result": "unverified",
+      "enabled": false,
+      "notes": "默认未启用。导入当前授权会话捕获并通过敏感字段校验的接口地图后才允许调用。",
+      "endpoints": []
+    },
+    "pyramid": {
+      "module": "pyramid",
+      "request_url": null,
+      "method": null,
+      "payload_schema": null,
+      "response_schema": null,
+      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
+      "can_call_from_any_ebooking_page": null,
+      "result": "unverified",
+      "enabled": false,
+      "notes": "默认未启用；7 天和 30 天端点需分别由真实接口地图声明。",
+      "periods": {
+        "7d": null,
+        "30d": null
+      }
+    },
+    "violation": {
+      "module": "violation",
+      "request_url": null,
+      "method": null,
+      "payload_schema": null,
+      "response_schema": null,
+      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
+      "can_call_from_any_ebooking_page": null,
+      "result": "unverified",
+      "enabled": false,
+      "notes": "默认未启用。",
+      "endpoints": []
+    }
+  }
+}

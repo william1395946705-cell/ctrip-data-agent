@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ctrip Silent Collector 调试</title>
+  <link rel="stylesheet" href="debug.css">
+</head>
+<body>
+  <main>
+    <h1>Ctrip Silent Collector POC</h1>
+    <p class="notice">仅在当前已登录的 eBooking 页面上下文中请求；不会跳转、点击、抢焦点或读取 Cookie。</p>
+
+    <section>
+      <h2>当前页面</h2>
+      <pre id="page-state">加载中…</pre>
+    </section>
+
+    <section>
+      <h2>接口地图</h2>
+      <p id="map-status">加载中…</p>
+      <pre id="module-status"></pre>
+      <label class="file-label">导入已验证地图（JSON）
+        <input id="map-file" type="file" accept="application/json,.json">
+      </label>
+    </section>
+
+    <section>
+      <h2>采集控制</h2>
+      <div class="actions">
+        <button id="refresh">刷新状态</button>
+        <button id="run">在当前页面执行一次</button>
+      </div>
+      <p id="action-status" role="status"></p>
+    </section>
+
+    <section>
+      <h2>配置</h2>
+      <div class="config-grid">
+        <label>冷却分钟 <input id="cooldown-minutes" type="number" min="0" step="1"></label>
+        <label>稳定静默毫秒 <input id="quiet-window-ms" type="number" min="250" step="250"></label>
+        <label>请求超时毫秒 <input id="request-timeout-ms" type="number" min="1000" step="1000"></label>
+      </div>
+      <button id="save-config">保存配置</button>
+    </section>
+
+    <section>
+      <h2>最近结果</h2>
+      <pre id="last-result">暂无</pre>
+      <h2>诊断</h2>
+      <pre id="diagnostics">暂无</pre>
+    </section>
+
+    <section class="danger-zone">
+      <h2>本地数据</h2>
+      <p>仅清除本插件 storage 中的结果、历史、接口地图和配置；不会清理网页 Cookie、缓存或登录态。</p>
+      <button id="clear-local" class="danger">清除本插件本地结果/配置</button>
+    </section>
+  </main>
+  <script type="module" src="debug.js"></script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+{
+  "name": "ctrip-silent-collector-poc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.mjs"
+  }
+}

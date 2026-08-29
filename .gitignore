@@ -1,0 +1,92 @@
+# Operating system and editor metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# Python caches, environments, coverage, and build output
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+
+# Node / extension caches and build output
+node_modules/
+extension/node_modules/
+extension/.cache/
+extension/dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local credentials, authentication state, and secret material
+.env
+.env.*
+!.env.example
+*credentials*.json
+*secrets*.json
+*password*.txt
+cookies*.json
+cookie*.txt
+auth-state*.json
+storage-state*.json
+session-state*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Chrome profiles and browser session data
+chrome-profile/
+chrome_profiles/
+user-data-dir/
+user_data_dir/
+browser-profile/
+Default/
+Local Storage/
+Session Storage/
+IndexedDB/
+Service Worker/
+DevToolsActivePort
+SingletonCookie
+SingletonLock
+SingletonSocket
+
+# Network captures, local collection output, and logs
+artifacts/
+local-session/
+docs/legacy_collector_source_baseline.json
+captures*.jsonl
+network*.jsonl
+*.har
+*.pcap
+*.pcapng
+*.log
+logs/
+silent_test_report*.json
+old_collector_result*.json
+silent_collector_result*.json
+
+# Downloaded business data and local exports
+downloads/
+exports/
+*.xlsx
+*.xls
+
+# Temporary files
+tmp/
+temp/
+*.tmp

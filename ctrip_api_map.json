@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "map_kind": "discovery",
+  "map_status": "unverified",
+  "generated_at": null,
+  "modules": {
+    "operating_report": {
+      "module": "operating_report",
+      "enabled": false,
+      "result": "unverified",
+      "required_page_context": "unknown",
+      "can_call_from_any_ebooking_page": null,
+      "notes": ["待当前授权会话重新捕获并完成 Test A-D 与逐字段对照。"],
+      "endpoints": []
+    },
+    "pyramid": {
+      "module": "pyramid",
+      "enabled": false,
+      "result": "unverified",
+      "required_page_context": "unknown",
+      "can_call_from_any_ebooking_page": null,
+      "notes": ["近7天与过去30天端点均未验证。"],
+      "periods": {
+        "7d": null,
+        "30d": null
+      }
+    },
+    "violation": {
+      "module": "violation",
+      "enabled": false,
+      "result": "unverified",
+      "required_page_context": "unknown",
+      "can_call_from_any_ebooking_page": null,
+      "notes": ["待当前授权会话重新捕获并完成 Test A-D 与逐字段对照。"],
+      "endpoints": []
+    }
+  }
+}
