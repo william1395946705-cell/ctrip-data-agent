@@ -409,7 +409,9 @@ class SilentPocTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(classify_replay_response("pyramid", {"status": 401, "data": {}}).status, ResultStatus.LOGIN_EXPIRED)
         self.assertEqual(classify_replay_response("pyramid", {"status": 429, "data": {}}).status, ResultStatus.BLOCKED)
         self.assertEqual(classify_replay_response("pyramid", {"status": 500, "data": {}}).status, ResultStatus.REQUEST_FAILED)
-        self.assertEqual(classify_replay_response("pyramid", {"status": 200, "url": "https://ebooking.ctrip.com/login", "redirected": True, "data": ""}).status, ResultStatus.LOGIN_EXPIRED)
+        redirected = classify_replay_response("pyramid", {"status": 200, "url": "https://ebooking.ctrip.com/login", "redirected": True, "data": ""})
+        self.assertEqual(redirected.status, ResultStatus.LOGIN_EXPIRED)
+        self.assertTrue(redirected.redirected)
         self.assertEqual(classify_replay_response("pyramid", {"status": 200, "data": {}}).status, ResultStatus.SUCCESS)
         page = FakePage()
         templates = {"operating_report": approved_get("operating_report", "https://ebooking.ctrip.com/api/operating-report"), "pyramid": approved_get("pyramid", "https://ebooking.ctrip.com/api/pyramid", variant="7d"), "pyramid_30d": approved_get("pyramid", "https://ebooking.ctrip.com/api/pyramid?range=30d", variant="30d"), "violation": approved_get("violation", "https://ebooking.ctrip.com/api/violation")}

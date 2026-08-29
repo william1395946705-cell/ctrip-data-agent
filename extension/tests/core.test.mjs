@@ -29,14 +29,17 @@ test("默认接口地图完整但全部未验证/禁用", async () => {
   }
 });
 
-test("根接口地图记录真实发现但保持全部禁用", async () => {
+test("根接口地图记录逐端点 replay PASS 但保持 discovery/禁用", async () => {
   const map = JSON.parse(await readFile(new URL("../../ctrip_api_map.json", import.meta.url)));
   const normalized = validateApiMap(map);
   assert.equal(normalized.map_status, "discovered");
   assert.equal(normalized.map_kind, "discovery");
   assert.equal(normalized.modules.operating_report.endpoints.length, 4);
+  assert.equal(normalized.modules.operating_report.result, "discovered");
+  assert.equal(normalized.modules.pyramid.result, "discovered");
   assert.equal(normalized.modules.pyramid.periods["7d"].result, "discovered");
   assert.equal(normalized.modules.pyramid.periods["30d"], null);
+  assert.equal(normalized.modules.violation.result, "discovered");
   assert.equal(normalized.modules.violation.endpoints.length, 1);
   for (const module of Object.values(normalized.modules)) {
     assert.equal(module.enabled, false);
@@ -45,9 +48,17 @@ test("根接口地图记录真实发现但保持全部禁用", async () => {
       ? Object.values(module.periods).filter(Boolean)
       : module.endpoints;
     for (const endpoint of endpoints) {
-      assert.equal(endpoint.read_only, false);
-      assert.equal(endpoint.required_page_context, "specific_module_page");
+      assert.equal(endpoint.result, "discovered");
+      assert.equal(endpoint.read_only, true);
+      assert.equal(endpoint.controlled_silent_test, true);
+      assert.equal(endpoint.required_page_context, "mixed");
       assert.equal(endpoint.can_call_from_any_ebooking_page, null);
+      assert.deepEqual(
+        [endpoint.silent_replay_tests.B, endpoint.silent_replay_tests.C, endpoint.silent_replay_tests.D],
+        ["PASS", "PASS", "PASS"]
+      );
+      assert.equal(endpoint.silent_replay_tests.write_side_effect_observed, null);
+      assert.equal(endpoint.silent_replay_tests.server_side_mutation_check, "NOT_MEASURED");
     }
   }
 });
