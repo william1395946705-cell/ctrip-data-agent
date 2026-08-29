@@ -1,96 +1,121 @@
 # Ctrip Silent Collector POC 阶段报告
 
 报告日期：2026-08-29
-阶段：目标业务页面真实接口发现
+阶段：普通 eBooking 页面受控 Replay
 
-## 本轮结论
+## 核心结论
 
-在授权测试酒店的已登录 eBooking 会话中，由测试人员手工进入目标业务页面，Python Inspector 仅被动监听页面自然产生的请求。程序没有导航、自动刷新、点击、键盘输入、抢焦点、自动登录或修改后台数据。
+在授权测试酒店的合法登录会话中，6 个上一阶段已发现的精确查询接口分别完成：
 
-本轮发现并完成页面抽样核对：
+- Test B：停留 eBooking 首页。
+- Test C：停留普通订单页。
+- Test D：测试人员手工刷新订单页并等待初始化。
 
-- 经营报告：**DISCOVERED**，4 个真实接口。
-- 金字塔：**DISCOVERED**，1 个近 7 天 ROAS 接口；30 天回退和异常状态仍为 **NOT VERIFIED**。
-- 违约看板：**DISCOVERED**，1 个列表/数量接口；已核对“无违约”，正样本仍为 **NOT VERIFIED**。
+三个阶段均为 **6/6 PASS**。程序没有进入经营报告、金字塔或违约页面，没有导航、自动刷新、点击、输入、抢焦点或打开新标签。
 
-`DISCOVERED` 只表示“目标页面自然请求、response 业务字段、页面显示”三者已经对应，不表示已证明可以从任意 eBooking 页面调用。本轮没有执行 replay，也没有把任何端点标记为 `VERIFIED`。
+因此本轮已经证明：**这 6 个接口可以从已测试的 eBooking 首页和普通订单页后台调用，不依赖目标业务模块初始化。**
 
-## 经营报告
+## 逐端点结果
 
-| 接口 | 承担数据 | 日期 | 分页 | 页面抽样 |
+| Endpoint | B | C | D | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `POST /datacenter/api/dataCenter/report/getHotelAdvice` | 经营提醒 | 未观察到 | 请求无分页 | 一致 |
-| `POST /datacenter/api/dataCenter/sale/fetchMarketOverViewV2` | 昨日离店间夜、竞争圈排名 | `startDate` 单日；`startDateType` 语义待解码 | 无 | 一致 |
-| `POST /datacenter/api/dataCenter/report/getDayReportServerQuantity` | 点评分、PSI | 未观察到 | 无 | 一致 |
-| `POST /datacenter/api/inland/marketanalysis/flowanalysis/queryFlowTransforNewV1` | 本店/竞争圈曝光、曝光转化率、下单转化率 | `startDate/endDate`，本次为同日样本 | 无；观察到两行 | 一致 |
+| `/datacenter/api/dataCenter/report/getHotelAdvice` | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
+| `/datacenter/api/dataCenter/sale/fetchMarketOverViewV2` | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
+| `/datacenter/api/dataCenter/report/getDayReportServerQuantity` | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
+| `/datacenter/api/inland/marketanalysis/flowanalysis/queryFlowTransforNewV1` | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
+| `/toolcenter/api/cpc/queryCampaignReportList`（7d） | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
+| `/toolcenter/api/psi/queryEbkPunlishMent` | PASS | PASS | PASS | DISCOVERED / REPLAY PASS |
 
-流量转化接口中，页面比例可由 response 的曝光、详情及下单原始计数准确计算。竞争圈行单独返回的 `flowRate` 标量与页面口径存在差异，因此后续解析应使用原始分子/分母，不应盲信该标量。
+每次 Replay 均确认 HTTP、业务 code、response schema、目标字段、发现阶段同酒店基线、页面 URL、登录态和酒店身份。未发生 redirect，未出现验证码/登录失效。端点已完成查询语义的人工只读审核；本轮没有独立测量服务端状态差异，不把固定布尔值当成无写副作用证明。
 
-四象限仍由程序计算，不从携程接口读取。
+## 经营报告完整性
 
-## 金字塔 / ROAS
+四个经营接口共同覆盖：
 
-真实接口：
+- 经营提醒。
+- 昨日离店间夜。
+- 竞争圈排名。
+- 点评分。
+- PSI。
+- 本店与竞争圈列表页曝光。
+- 本店与竞争圈曝光转化率。
+- 本店与竞争圈下单转化率。
 
-`POST /toolcenter/api/cpc/queryCampaignReportList`
+流量接口的本店/竞争圈原始计数在 B/C/D 均与发现阶段基线一致。转化率按原始分子/分母计算，不使用竞争圈行口径异常的 `flowRate` 标量。四象限继续由程序本地计算。
 
-- 请求包含 `startDate`、`endDate`、`convertPeriod`、`isSummary`、`pageIdx`、`pageSize`。
-- response 的 `data.records` 提供 ROAS、消耗、订单金额和日期，另有 `totalRecords/totalPages`。
-- 近 7 天汇总和逐日页面数据均完成一次抽样核对。
-- 抽样支持日期首尾为闭区间。
-- 观察到 `totalPages` 与非空 records 不一致；下一轮必须以 `totalRecords` 和实际 records 做防御性分页校验。
+经营报告必要接口已全部通过 Replay，但因旧采集器逐字段对照尚未完成，模块仍保留 `discovered/disabled`。
 
-未验证事项：
+## 近 7 天 ROAS
 
-- 本账号近 7 天有数据，没有自然触发 30 天回退。
-- 无法用本次样本证明“真实未投流、页面仍加载、请求失败、登录失效”的响应差异。
-- 最大 pageSize 和多页完整性未验证。
+`queryCampaignReportList` 的汇总与逐日两个请求变体均通过 B/C/D：
 
-## 商家违规 / 违约看板
+- 日期范围与发现阶段 7 天样本一致。
+- 汇总 ROAS 和逐日记录与页面发现基线一致。
+- `pageIdx/pageSize` 有效。
+- 分页完整性按 `totalRecords` 与实际 records 数量确认。
+- 未依赖异常的 `totalPages`。
 
-真实接口：
+30 天回退继续为 **NOT VERIFIED**。当前样本 7 天有数据，不能制造无投流、30 天、加载、请求失败或登录失效结果，因此金字塔模块不整体升级。
 
-`POST /toolcenter/api/psi/queryEbkPunlishMent`
+## 无违约状态
 
-- 请求包含分类/状态筛选以及 `pageIndex/pageSize`。
-- response 的 `data.totalRecords` 与 `data.records` 可用于判断违约数量和读取列表。
-- 当前样本返回零记录；测试人员明确确认页面显示“无违约”，抽样一致。
-- 未观察到日期参数。
-- 有违约正样本和多页数据仍未验证。
+`queryEbkPunlishMent` 在 B/C/D 均返回零条：
 
-## 接口真实性与排除项
+- `totalRecords = 0`
+- `records` 为空
+- 与目标页发现阶段人工确认的“无违约”一致
 
-六个接口均满足本轮 `DISCOVERED` 门槛：由对应业务页面自然产生、返回非 HTML 业务结构、存在页面对应字段、抽样一致、不是消息通知/订单详情，也未观察到修改业务数据的效果。
+有违约正样本与多页数据继续为 **NOT VERIFIED**，违约模块不整体升级。
 
-被排除的候选包括页面 HTML 壳、通知/二维码/优惠券、普通 CPC 支持接口、诊断与活动明细接口，以及与页面所示近 7 天汇总不一致的当前日直连调用。排除后没有以泛化 URL 关键词代替业务证据。
+## 页面无感与刷新稳定性
 
-## API Map 与执行安全
+三个阶段均确认：
 
-根目录 `ctrip_api_map.json` 保存 6 个已发现端点的脱敏结构：
+- `window.location.href` 前后完全一致。
+- 当前页面焦点状态不变。
+- 未创建新 target/tab。
+- 酒店身份和登录态保持不变。
+- B/C/D 使用相同的安全模板 hash。
+- Test D 刷新后无需重新进入目标页面，也无需重新捕获动态初始化信息。
 
-- `map_kind: discovery`
-- `map_status: discovered`
-- 所有模块 `enabled: false`
-- 所有端点 `read_only: false`
-- `can_call_from_any_ebooking_page: null`
+发现记录中的动态浏览器/指纹字段在模板编译时被删除；删除后六个接口仍正常返回，说明本轮请求不依赖持久化这些值。
 
-因此它不能触发扩展采集。扩展内置地图仍保持
-`unverified/disabled`。只有下一轮普通页面 replay 和 Test A-D 完成后，才可单独生成经过审核的可执行地图。
+## 安全与副作用
 
-平台动态会话、追踪、设备和指纹字段已按 fail-closed 规则脱敏。接口地图、文档和测试不包含真实 Cookie、Authorization、Token、Session、CSRF、query 动态值、酒店账号、Profile 路径或业务原始 response。六个接口未观察到疑似写操作，但在未完成独立只读审核前不会标记 `read_only:true`。
+- 只允许 6 个精确路径和 POST 方法。
+- 每个 POST 均有查询语义、发现阶段自然请求证据和独立只读说明。
+- Replay 仅使用当前页面中由浏览器托管的同源会话请求能力。
+- 不读取、导出或保存 Cookie、Authorization、Token、Session、CSRF、localStorage 或 Profile。
+- 报告不保存请求 payload、response 业务值、酒店账号或认证 header。
+- 捕获集只在“当前会话实时 flow 酒店 ID 集合 = 发现基线 ID 集合”时允许绑定；本地只保存捕获集和酒店身份的单向摘要，捕获变更或酒店切换均拒绝继续。
+- 未发现疑似写请求；运行报告将独立服务端副作用测量标记为 `NOT_MEASURED`。
+- 原始本地结果位于 gitignored `artifacts/`，提交前继续执行敏感扫描。
 
-## 对 POC 核心问题的当前回答
+## API Map 与产品化边界
 
-> 门店员工只正常打开/刷新携程后台，我们能否在不干扰其工作的前提下，把现有采集程序里的整套携程数据完整采回来？
+根接口地图仍保持 `map_kind:discovery`、`map_status:discovered`，
+全部模块 `enabled:false`。六个端点逐项记录：
 
-**本轮仍不能宣称可以，但已经从“未知接口”推进到“有 6 个精确、已完成业务对应的 replay 候选”。**
+- `result:discovered`
+- `read_only:true`
+- `required_page_context:mixed`（已测首页/订单页）
+- `can_call_from_any_ebooking_page:null`
+- Test B/C/D PASS
 
-开发期人工进入目标页面只用于一次性发现，不是正式产品要求。是否能在首页、订单页、房态页或价格页复用当前登录会话调用这些接口，必须由下一轮普通页面 replay 证明。任何仍依赖特定页面初始化的模块，都应判为当前无法完全无感，不能以自动切页替代。
+没有把端点或整个地图直接改为 VERIFIED：旧采集器逐字段对照、30 天 ROAS 和有违约正样本仍缺证据，扩展内置地图继续 `unverified/disabled`。
 
-## 下一步建议
+## 对核心问题的回答
 
-1. 逐个审核六个候选的只读性质，仅在当前授权进程内构造无敏感值 replay 模板。
-2. 从首页和普通业务页执行 Test B/C，并在测试人员手工刷新后执行 Test D；全过程校验 URL 未变和未抢焦点。
-3. 对经营报告全部字段、7 天 ROAS、30 天回退和违约状态与旧采集器逐字段比较。
-4. 补充近 7 天无数据/未投流样本与有违约/多页样本。
-5. 只有普通页 replay、异常状态、分页和逐字段对照均通过，才将对应模块提升为 `VERIFIED` 并考虑启用。
+> 门店员工只正常打开或刷新携程后台，我们能否在不干扰其工作的前提下，把现有采集程序里的整套携程数据完整采回来？
+
+**对于已经发现的 6 个接口、当前测试酒店以及已测首页/订单页，答案是可以。Silent Collector 的核心技术路线已经成立。**
+
+经营报告目标字段、近 7 天 ROAS 和当前“无违约”状态均已从首页、订单页和刷新后的订单页成功取得。完整生产结论仍需补齐旧采集器逐字段对照、其他普通页样本、30 天 ROAS 回退与有违约正样本。
+
+## 建议下一步
+
+1. 用旧采集器对经营报告、7 天 ROAS 和无违约做同酒店逐字段对照。
+2. 补充房态/价格等其他普通页样本，再决定是否将上下文升级为任意 eBooking 页。
+3. 补充真实 7 天为零/无数据场景，验证 30 天回退及未投流、加载、失败、登录失效的区分。
+4. 补充有违约和多页样本。
+5. 全部门槛满足后再生成独立扩展执行地图，接入冷却、缓存和长时间稳定性测试；继续禁止自动切页 fallback。

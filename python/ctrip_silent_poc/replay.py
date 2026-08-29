@@ -349,7 +349,7 @@ def classify_replay_response(module: str, response: Any, *, error: Any = None) -
     if response_type == "opaqueredirect" or (http_status is not None and 300 <= http_status < 400) or redirected:
         target = redirect_location or response_url or ""
         status = ResultStatus.LOGIN_EXPIRED if re.search(r"/(?:login|signin)(?:/|$)|passport", target, re.I) else ResultStatus.BLOCKED
-        return ReplayResult(module, status, http_status, content_type, response_url, data, error="Redirect was not followed.", http_ok=False, business_ok=False)
+        return ReplayResult(module, status, http_status, content_type, response_url, data, error="Redirect was not followed.", http_ok=False, business_ok=False, redirected=True)
     login_url = bool(response_url and re.search(r"/(?:login|signin)(?:/|$)|passport", response_url, re.I))
     if http_status in {401} or (redirected and login_url) or _contains_signal(data, ("登录已失效", "请先登录", "login required", "session expired", "未登录")):
         return ReplayResult(module, ResultStatus.LOGIN_EXPIRED, http_status, content_type, response_url, data, http_ok=False, business_ok=False)

@@ -32,6 +32,7 @@ from .replay import (
     normalize_operating,
     normalize_violation,
 )
+from .target_replay import run_target_replay
 
 
 MODULE_INSTRUCTIONS = (
@@ -515,6 +516,27 @@ def _build_parser() -> argparse.ArgumentParser:
     session.add_argument("--cooldown-minutes", type=int, default=30)
     session.add_argument("--old-result", required=True, help="normalized old collector JSON for field comparison")
     session.add_argument("--output-dir", default="artifacts/local-session")
+
+    replay_targets = subparsers.add_parser(
+        "replay-targets",
+        help="replay the six reviewed query endpoints on the current ordinary eBooking page",
+    )
+    replay_targets.add_argument("--cdp-url", required=True, help="existing authorized local Chrome CDP endpoint")
+    replay_targets.add_argument("--test-id", required=True, choices=("B", "C", "D"))
+    replay_targets.add_argument("--page-index", type=int, default=0)
+    replay_targets.add_argument("--api-map", default="ctrip_api_map.json")
+    replay_targets.add_argument("--capture-root", default="artifacts/target-discovery")
+    replay_targets.add_argument("--output-dir", default="artifacts/replay-target-endpoints")
+    replay_targets.add_argument(
+        "--manual-refresh-confirmed",
+        action="store_true",
+        help="required for Test D; confirms the operator refreshed the ordinary page manually",
+    )
+    replay_targets.add_argument(
+        "--confirm-capture-set-current-hotel",
+        action="store_true",
+        help="one-time operator confirmation; binds the exact gitignored capture set to the current hotel",
+    )
     return parser
 
 
@@ -551,6 +573,26 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_run_observe(args))
     if args.command == "session":
         return asyncio.run(_run_session(args))
+    if args.command == "replay-targets":
+        output_path = Path(args.output_dir) / f"test_{args.test_id.lower()}.json"
+        report = asyncio.run(run_target_replay(
+            cdp_url=args.cdp_url,
+            test_id=args.test_id,
+            api_map_path=args.api_map,
+            capture_root=args.capture_root,
+            output_path=output_path,
+            page_index=args.page_index,
+            manual_refresh_confirmed=args.manual_refresh_confirmed,
+            confirm_capture_set_current_hotel=args.confirm_capture_set_current_hotel,
+        ))
+        print(json.dumps({
+            "test_id": report.get("test_id"),
+            "result": report.get("result"),
+            "endpoint_count": report.get("endpoint_count"),
+            "page_url_unchanged": report.get("page_url_unchanged"),
+            "write_side_effect_observed": report.get("write_side_effect_observed"),
+        }, ensure_ascii=False))
+        return 0 if report.get("result") == "PASS" else 1
     return 2
 
 

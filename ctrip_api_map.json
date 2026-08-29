@@ -2,17 +2,17 @@
   "version": 1,
   "map_kind": "discovery",
   "map_status": "discovered",
-  "generated_at": "2026-08-29T16:20:18+08:00",
+  "generated_at": "2026-08-29T17:31:22+08:00",
   "modules": {
     "operating_report": {
       "module": "operating_report",
       "enabled": false,
       "result": "discovered",
-      "required_page_context": "specific_module_page",
+      "required_page_context": "mixed",
       "can_call_from_any_ebooking_page": null,
       "notes": [
         "四个接口均由经营报告页面自然触发，并完成页面抽样核对。",
-        "本轮未执行普通页面 replay；接口保持禁用。"
+        "四个必要接口均通过首页、订单页和订单页手工刷新后的 Test B/C/D；模块保持禁用，待产品化执行地图审核。"
       ],
       "endpoints": [
         {
@@ -20,7 +20,8 @@
           "request_url": "/datacenter/api/dataCenter/report/getHotelAdvice",
           "method": "POST",
           "payload_schema": {
-            "type": "null"
+            "type": "object",
+            "fields": {}
           },
           "query_schema": {
             "type": "none"
@@ -67,7 +68,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -76,10 +77,20 @@
               "matched": true
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a report query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询经营提醒的报告型 POST；发现阶段未观察到写副作用，且 Test B/C/D 均只返回报告数据。",
+          "read_only_observation": "Observed as a report query; authorized controlled Test B/C/D produced only report data and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：经营报告。",
             "仅记录结构和字段路径，不包含动态认证值。"
@@ -145,7 +156,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -158,10 +169,20 @@
               "matched": true
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a market overview query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询离店间夜与竞争圈排名的报告型 POST；发现阶段未观察到写副作用，且 Test B/C/D 均只返回统计数据。",
+          "read_only_observation": "Observed as a market overview query; authorized controlled Test B/C/D produced only statistics and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：经营报告。",
             "动态浏览器字段已脱敏且未写入接口地图。"
@@ -215,7 +236,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -228,10 +249,20 @@
               "matched": true
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a daily report score query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询点评分与 PSI 的报告型 POST；发现阶段未观察到写副作用，且 Test B/C/D 均只返回评分数据。",
+          "read_only_observation": "Observed as a daily report score query; authorized controlled Test B/C/D produced only score data and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：经营报告。",
             "动态浏览器字段已脱敏且未写入接口地图。"
@@ -309,7 +340,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -342,10 +373,20 @@
               "comparison": "derived_from_raw_counts"
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a flow analysis query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询曝光与转化原始计数的报告型 POST；发现阶段未观察到写副作用，且 Test B/C/D 均只返回统计数据。",
+          "read_only_observation": "Observed as a flow analysis query; authorized controlled Test B/C/D produced only statistics and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：经营报告。",
             "竞争圈返回行的 flowRate 与页面展示存在口径差异；抽样核对以原始分子分母计算值为准。"
@@ -357,11 +398,11 @@
       "module": "pyramid",
       "enabled": false,
       "result": "discovered",
-      "required_page_context": "specific_module_page",
+      "required_page_context": "unknown",
       "can_call_from_any_ebooking_page": null,
       "notes": [
-        "近7天接口已发现并完成页面抽样核对。",
-        "30天回退、无数据、加载中与失败状态仍为 NOT VERIFIED；模块保持禁用。"
+        "近7天接口已完成页面抽样和首页、订单页、刷新后 Test B/C/D，证明该端点不依赖特定模块初始化。",
+        "30天回退、无数据、加载中与失败状态仍为 NOT VERIFIED；模块不升级且保持禁用。"
       ],
       "periods": {
         "7d": {
@@ -378,6 +419,33 @@
               "isSummary": "boolean",
               "pageIdx": "integer",
               "pageSize": "integer"
+            }
+          },
+          "variant_payload_schemas": {
+            "summary": {
+              "fields": [
+                "startDate",
+                "endDate",
+                "convertPeriod",
+                "isSummary",
+                "pageIdx",
+                "pageSize"
+              ]
+            },
+            "daily": {
+              "fields": [
+                "campaignId",
+                "startDate",
+                "endDate",
+                "keyword",
+                "keywordType",
+                "pageIdx",
+                "pageSize",
+                "isSummary",
+                "convertPeriod",
+                "premiumCodes",
+                "isChart"
+              ]
             }
           },
           "query_schema": {
@@ -449,7 +517,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -462,10 +530,21 @@
               "matched": true
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a campaign report query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询 7 天广告投产汇总与逐日记录的报告型 POST；未观察到营销活动写副作用，且 Test B/C/D 均只返回报表数据。",
+          "read_only_observation": "Observed as a campaign report query; authorized controlled Test B/C/D produced only report data and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "records_complete_by_total_records": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：金字塔数据报告。",
             "本轮账号近7天有数据，因此未触发30天回退分支。"
@@ -478,11 +557,11 @@
       "module": "violation",
       "enabled": false,
       "result": "discovered",
-      "required_page_context": "specific_module_page",
+      "required_page_context": "mixed",
       "can_call_from_any_ebooking_page": null,
       "notes": [
-        "无违约状态已由测试人员确认并与接口零记录结果一致。",
-        "有违约正样本及多页样本仍为 NOT VERIFIED；模块保持禁用。"
+        "无违约状态已通过页面抽样及首页、订单页、刷新后 Test B/C/D。",
+        "有违约正样本及多页样本仍为 NOT VERIFIED；模块不升级且保持禁用。"
       ],
       "endpoints": [
         {
@@ -553,7 +632,7 @@
             "browser_managed_credentials",
             "header_absence_not_requirement_proof"
           ],
-          "required_page_context": "specific_module_page",
+          "required_page_context": "mixed",
           "can_call_from_any_ebooking_page": null,
           "result": "discovered",
           "page_sample_checks": [
@@ -563,10 +642,21 @@
               "matched": true
             }
           ],
-          "read_only": false,
-          "read_only_observation": "Observed as a violation list query; no write effect was observed. Formal read-only approval is deferred.",
+          "read_only": true,
+          "read_only_justification": "查询违约列表与数量的报告型 POST；未观察到业务写副作用，且 Test B/C/D 均返回一致的无违约结果。",
+          "read_only_observation": "Observed as a violation list query; authorized controlled Test B/C/D produced only list data and no write effect was observed.",
           "write_operation_observed": false,
-          "controlled_silent_test": false,
+          "controlled_silent_test": true,
+          "silent_replay_tests": {
+            "B": "PASS",
+            "C": "PASS",
+            "D": "PASS",
+            "page_url_unchanged": true,
+            "focus_state_unchanged": true,
+            "zero_record_state_matched": true,
+            "write_side_effect_observed": null,
+            "server_side_mutation_check": "NOT_MEASURED"
+          },
           "notes": [
             "自然触发页面：商家违规/违约看板。",
             "接口路径拼写按真实请求保留。",

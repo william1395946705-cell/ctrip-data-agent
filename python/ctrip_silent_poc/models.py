@@ -94,6 +94,7 @@ class ReplayResult:
     warnings: List[str] = field(default_factory=list)
     http_ok: bool = False
     business_ok: bool = False
+    redirected: bool = False
     current_page_url_before: Optional[str] = None
     current_page_url_after: Optional[str] = None
     current_page_unchanged: bool = True
@@ -113,6 +114,7 @@ class ReplayResult:
             "warnings": list(self.warnings),
             "http_ok": self.http_ok,
             "business_ok": self.business_ok,
+            "redirected": self.redirected,
             "current_page_url_before": self.current_page_url_before,
             "current_page_url_after": self.current_page_url_after,
             "current_page_unchanged": self.current_page_unchanged,
