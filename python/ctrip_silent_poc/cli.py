@@ -12,6 +12,8 @@ import json
 import re
 import sys
 import uuid
+from collections import Counter
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -212,6 +214,105 @@ async def _select_page(browser: Any, page_index: int) -> tuple[Any, Any]:
     return candidates[page_index]
 
 
+async def _run_observe(args: argparse.Namespace) -> int:
+    """Passively observe one existing eBooking page for real API discovery.
+
+    This command deliberately has no interactive page-control operations.  It
+    does not navigate, reload, focus, click or type; an operator may continue
+    using or manually refresh the selected page during the capture window.
+    """
+
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as error:
+        raise RuntimeError("Playwright is required for the observe command. Install the optional playwright dependency.") from error
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    playwright = await async_playwright().start()
+    inspector: NetworkInspector | None = None
+    try:
+        browser = await playwright.chromium.connect_over_cdp(args.cdp_url)
+        context, page = await _select_page(browser, args.page_index)
+        state_before = await inspect_current_page(page)
+        page_hotel = {"hotel_id": state_before.hotel_id, "hotel_name": state_before.hotel_name}
+        if not state_before.is_ebooking:
+            raise RuntimeError("The selected page is not the exact eBooking HTTPS origin.")
+        if state_before.is_logged_in is not True:
+            raise RuntimeError("The selected eBooking page does not have a confirmed logged-in state.")
+        if not state_before.initialized:
+            raise RuntimeError("The selected eBooking page has not completed initialization.")
+        if not hotel_fingerprint(page_hotel):
+            raise RuntimeError("The current hotel identity could not be confirmed from harmless page state.")
+
+        before_url = sanitize_url(page.url)
+        inspector = NetworkInspector(
+            capture_enabled=True,
+            hotel_fingerprint=hotel_fingerprint(page_hotel),
+        ).attach(context, target_page=page)
+        capture_started_at = asyncio.get_running_loop().time()
+        if getattr(args, "until_enter", False):
+            await asyncio.to_thread(
+                input,
+                "被动监听已开启；请由测试人员手工进入目标页并等待数据稳定，完成后按回车结束捕获：",
+            )
+        else:
+            await page.wait_for_timeout(max(1, args.seconds) * 1000)
+        await inspector.drain()
+        capture_seconds = max(1, round(asyncio.get_running_loop().time() - capture_started_at))
+
+        after_url = sanitize_url(page.url)
+        state_after = await inspect_current_page(page)
+        after_hotel = {"hotel_id": state_after.hotel_id, "hotel_name": state_after.hotel_name}
+        same_hotel = hotel_fingerprint(page_hotel) == hotel_fingerprint(after_hotel)
+        observation_stable = bool(
+            before_url == after_url
+            and state_after.is_logged_in is True
+            and state_after.initialized
+            and same_hotel
+        )
+        target_modules = {
+            Module.OPERATING_REPORT.value,
+            Module.PYRAMID.value,
+            Module.VIOLATION.value,
+        }
+        target_candidates = [record for record in inspector.records if record.module in target_modules]
+        module_counts = Counter(record.module for record in inspector.records)
+
+        inspector.write_jsonl(output_dir / "captures.sanitized.jsonl")
+        write_api_map(output_dir / "ctrip_api_map.json", inspector.records)
+        summary = {
+            "observed_at": datetime.now(timezone.utc).isoformat(),
+            "seconds": capture_seconds,
+            "page_before": before_url,
+            "page_after": after_url,
+            "page_unchanged": before_url == after_url,
+            "logged_in_before": state_before.is_logged_in,
+            "logged_in_after": state_after.is_logged_in,
+            "initialized_after": state_after.initialized,
+            "hotel_identity_present": True,
+            "hotel_identity_unchanged": same_hotel,
+            "capture_count": len(inspector.records),
+            "module_counts": dict(sorted(module_counts.items())),
+            "target_candidate_count": len(target_candidates),
+            "target_candidate_modules": sorted({record.module for record in target_candidates}),
+            "result": "CANDIDATES_OBSERVED" if target_candidates and observation_stable else "NOT VERIFIED",
+            "notes": [
+                "Candidate classification is discovery evidence only; it does not prove endpoint semantics or replay safety.",
+                "No navigation, reload, focus, click or keyboard operation was performed by this command.",
+            ],
+        }
+        _write_json(output_dir / "passive_observation.json", summary)
+        print(json.dumps(summary, ensure_ascii=False))
+        return 0
+    finally:
+        if inspector is not None:
+            inspector.detach()
+        # Disconnect only the Playwright driver.  Never close the employee's
+        # existing browser or clear its profile/session state.
+        await playwright.stop()
+
+
 async def _run_session(args: argparse.Namespace) -> int:
     try:
         from playwright.async_api import async_playwright
@@ -393,6 +494,20 @@ def _build_parser() -> argparse.ArgumentParser:
     run_legacy.add_argument("--output", required=True, help="safe normalized control JSON")
     run_legacy.add_argument("--speed", choices=("fast", "stable"), default="stable")
 
+    observe = subparsers.add_parser(
+        "observe",
+        help="passively observe an existing authorized eBooking page without navigation or focus",
+    )
+    observe.add_argument("--cdp-url", required=True, help="existing authorized local Chrome CDP endpoint")
+    observe.add_argument("--page-index", type=int, default=0)
+    observe.add_argument("--seconds", type=int, default=30, help="passive capture window in seconds")
+    observe.add_argument(
+        "--until-enter",
+        action="store_true",
+        help="keep listening until the operator presses Enter; never controls the page",
+    )
+    observe.add_argument("--output-dir", default="artifacts/passive-observation")
+
     session = subparsers.add_parser("session", help="attach to an existing authorized CDP browser without navigation")
     session.add_argument("--cdp-url", required=True, help="existing local CDP endpoint, for example http://127.0.0.1:PORT")
     session.add_argument("--page-index", type=int, default=0)
@@ -432,6 +547,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(f"旧采集器脱敏对照完成：evidence_complete={str(legacy_control_ready(normalized)).lower()}")
         return 0 if legacy_control_ready(normalized) else 1
+    if args.command == "observe":
+        return asyncio.run(_run_observe(args))
     if args.command == "session":
         return asyncio.run(_run_session(args))
     return 2

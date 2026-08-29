@@ -20,6 +20,7 @@ SENSITIVE_KEY_PARTS = (
     "cookie",
     "csrf",
     "credential",
+    "fingerprint",
     "jwt",
     "password",
     "passwd",
@@ -38,6 +39,27 @@ SENSITIVE_KEY_PARTS = (
     "authvalue",
 )
 SENSITIVE_QUERY_PARTS = SENSITIVE_KEY_PARTS + ("ticket", "code", "state", "sso")
+
+# Short telemetry/session keys are matched exactly instead of as substrings so
+# business fields such as ``hotelId`` and ``orderId`` remain available while
+# browser/session correlation identifiers never reach serialized artifacts.
+SENSITIVE_EXACT_KEYS = {
+    "clientid",
+    "ctok",
+    "deviceid",
+    "fp",
+    "fxpcqlniredt",
+    "logid",
+    "oneid",
+    "pvid",
+    "requestid",
+    "sid",
+    "spiderkey",
+    "traceid",
+    "vid",
+    "xsid",
+    "xtraceid",
+}
 
 SAFE_HEADER_NAMES = {
     "accept",
@@ -77,7 +99,10 @@ _GENERAL_SECRET_RE = re.compile(
 
 def is_sensitive_key(key: Any) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-    return bool(normalized) and any(part in normalized for part in SENSITIVE_KEY_PARTS)
+    return bool(normalized) and (
+        normalized in SENSITIVE_EXACT_KEYS
+        or any(part in normalized for part in SENSITIVE_KEY_PARTS)
+    )
 
 
 def sanitize_text(value: str) -> str:
@@ -113,7 +138,10 @@ def sanitize_url(url: Any) -> str:
 
 def is_sensitive_query_key(key: Any) -> bool:
     normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
-    return bool(normalized) and any(part in normalized for part in SENSITIVE_QUERY_PARTS)
+    return bool(normalized) and (
+        normalized in SENSITIVE_EXACT_KEYS
+        or any(part in normalized for part in SENSITIVE_QUERY_PARTS)
+    )
 
 
 def redact_value(value: Any, key: Optional[Any] = None, *, max_string_length: int = 100_000) -> Any:

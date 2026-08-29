@@ -1,38 +1,579 @@
 {
   "version": 1,
   "map_kind": "discovery",
-  "map_status": "unverified",
-  "generated_at": null,
+  "map_status": "discovered",
+  "generated_at": "2026-08-29T16:20:18+08:00",
   "modules": {
     "operating_report": {
       "module": "operating_report",
       "enabled": false,
-      "result": "unverified",
-      "required_page_context": "unknown",
+      "result": "discovered",
+      "required_page_context": "specific_module_page",
       "can_call_from_any_ebooking_page": null,
-      "notes": ["待当前授权会话重新捕获并完成 Test A-D 与逐字段对照。"],
-      "endpoints": []
+      "notes": [
+        "四个接口均由经营报告页面自然触发，并完成页面抽样核对。",
+        "本轮未执行普通页面 replay；接口保持禁用。"
+      ],
+      "endpoints": [
+        {
+          "module": "operating_report",
+          "request_url": "/datacenter/api/dataCenter/report/getHotelAdvice",
+          "method": "POST",
+          "payload_schema": {
+            "type": "null"
+          },
+          "query_schema": {
+            "type": "none"
+          },
+          "response_schema": {
+            "type": "object",
+            "top_level_fields": [
+              "rcode",
+              "msg",
+              "totalPage",
+              "totalRecords",
+              "data"
+            ],
+            "data_fields": [
+              "goodhotelAdviceEntityList",
+              "badhotelAdviceEntityList",
+              "score",
+              "scorelevel"
+            ]
+          },
+          "business_fields": {
+            "operating_reminder": [
+              "data.goodhotelAdviceEntityList",
+              "data.badhotelAdviceEntityList"
+            ]
+          },
+          "field_paths": {
+            "operating_reminder": "data.badhotelAdviceEntityList"
+          },
+          "date_parameters": {
+            "type": "none_observed"
+          },
+          "hotel_identifier_fields": [],
+          "pagination": {
+            "request": "none_observed",
+            "response_metadata": [
+              "totalPage",
+              "totalRecords"
+            ],
+            "loop_required": false
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "operating_reminder",
+              "matched": true
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a report query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：经营报告。",
+            "仅记录结构和字段路径，不包含动态认证值。"
+          ]
+        },
+        {
+          "module": "operating_report",
+          "request_url": "/datacenter/api/dataCenter/sale/fetchMarketOverViewV2",
+          "method": "POST",
+          "payload_schema": {
+            "type": "object",
+            "fields": {
+              "platform": "integer",
+              "startDateType": "integer",
+              "startDate": "string",
+              "needRank": "boolean",
+              "spiderVersion": "string"
+            },
+            "dynamic_browser_fields": "redacted_and_not_persisted"
+          },
+          "query_schema": {
+            "type": "none"
+          },
+          "response_schema": {
+            "type": "object",
+            "top_level_fields": [
+              "rcode",
+              "msg",
+              "data"
+            ],
+            "data_fields": [
+              "quantity",
+              "rankOfQuantity",
+              "competitorNumber"
+            ]
+          },
+          "business_fields": {
+            "departed_room_nights": "data.quantity",
+            "room_night_rank": "data.rankOfQuantity",
+            "competition_size": "data.competitorNumber"
+          },
+          "field_paths": {
+            "room_night_rank": "data.rankOfQuantity"
+          },
+          "date_parameters": {
+            "startDate": {
+              "type": "string",
+              "format": "YYYY-MM-DD",
+              "shape": "single_date"
+            },
+            "startDateType": {
+              "type": "integer",
+              "semantics": "not_independently_decoded"
+            }
+          },
+          "hotel_identifier_fields": [],
+          "pagination": {
+            "request": "none_observed",
+            "loop_required": false
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "departed_room_nights",
+              "matched": true
+            },
+            {
+              "field": "room_night_rank",
+              "matched": true
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a market overview query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：经营报告。",
+            "动态浏览器字段已脱敏且未写入接口地图。"
+          ]
+        },
+        {
+          "module": "operating_report",
+          "request_url": "/datacenter/api/dataCenter/report/getDayReportServerQuantity",
+          "method": "POST",
+          "payload_schema": {
+            "type": "object",
+            "fields": {
+              "spiderVersion": "string"
+            },
+            "dynamic_browser_fields": "redacted_and_not_persisted"
+          },
+          "query_schema": {
+            "type": "none"
+          },
+          "response_schema": {
+            "type": "object",
+            "top_level_fields": [
+              "rcode",
+              "msg",
+              "data"
+            ],
+            "data_fields": [
+              "serviceScore",
+              "serviceScoreRank",
+              "ctripRatingall"
+            ]
+          },
+          "business_fields": {
+            "review_score": "data.ctripRatingall",
+            "psi_score": "data.serviceScore"
+          },
+          "field_paths": {
+            "review_score": "data.ctripRatingall",
+            "psi_score": "data.serviceScore"
+          },
+          "date_parameters": {
+            "type": "none_observed"
+          },
+          "hotel_identifier_fields": [],
+          "pagination": {
+            "request": "none_observed",
+            "loop_required": false
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "review_score",
+              "matched": true
+            },
+            {
+              "field": "psi_score",
+              "matched": true
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a daily report score query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：经营报告。",
+            "动态浏览器字段已脱敏且未写入接口地图。"
+          ]
+        },
+        {
+          "module": "operating_report",
+          "request_url": "/datacenter/api/inland/marketanalysis/flowanalysis/queryFlowTransforNewV1",
+          "method": "POST",
+          "payload_schema": {
+            "type": "object",
+            "fields": {
+              "platform": "string",
+              "startDate": "string",
+              "endDate": "string",
+              "spiderVersion": "string"
+            },
+            "dynamic_browser_fields": "redacted_and_not_persisted"
+          },
+          "query_schema": {
+            "type": "object",
+            "fields": {
+              "hostType": "string",
+              "v": "string"
+            },
+            "values_persisted": false
+          },
+          "response_schema": {
+            "type": "array",
+            "observed_row_count": 2,
+            "row_fields": [
+              "date",
+              "listExposure",
+              "detailExposure",
+              "flowRate",
+              "orderFillingNum",
+              "orderSubmitNum",
+              "hotelId"
+            ]
+          },
+          "business_fields": {
+            "hotel_list_exposure": "$[0].listExposure",
+            "comp_list_exposure": "$[1].listExposure",
+            "hotel_exposure_conversion": "$[0].detailExposure / $[0].listExposure",
+            "comp_exposure_conversion": "$[1].detailExposure / $[1].listExposure",
+            "hotel_order_conversion": "$[0].orderFillingNum / $[0].detailExposure",
+            "comp_order_conversion": "$[1].orderFillingNum / $[1].detailExposure"
+          },
+          "field_paths": {
+            "hotel_list_exposure": "$[0].listExposure",
+            "comp_list_exposure": "$[1].listExposure"
+          },
+          "date_parameters": {
+            "startDate": {
+              "type": "string",
+              "format": "YYYY-MM-DD"
+            },
+            "endDate": {
+              "type": "string",
+              "format": "YYYY-MM-DD"
+            },
+            "interval": "closed_for_observed_same_day_sample",
+            "default_range": "single_day_observed"
+          },
+          "hotel_identifier_fields": [
+            "response[].hotelId"
+          ],
+          "pagination": {
+            "request": "none_observed",
+            "observed_row_count": 2,
+            "loop_required": false
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "hotel_list_exposure",
+              "matched": true
+            },
+            {
+              "field": "comp_list_exposure",
+              "matched": true
+            },
+            {
+              "field": "hotel_exposure_conversion",
+              "matched": true,
+              "comparison": "derived_from_raw_counts"
+            },
+            {
+              "field": "comp_exposure_conversion",
+              "matched": true,
+              "comparison": "derived_from_raw_counts"
+            },
+            {
+              "field": "hotel_order_conversion",
+              "matched": true,
+              "comparison": "derived_from_raw_counts"
+            },
+            {
+              "field": "comp_order_conversion",
+              "matched": true,
+              "comparison": "derived_from_raw_counts"
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a flow analysis query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：经营报告。",
+            "竞争圈返回行的 flowRate 与页面展示存在口径差异；抽样核对以原始分子分母计算值为准。"
+          ]
+        }
+      ]
     },
     "pyramid": {
       "module": "pyramid",
       "enabled": false,
-      "result": "unverified",
-      "required_page_context": "unknown",
+      "result": "discovered",
+      "required_page_context": "specific_module_page",
       "can_call_from_any_ebooking_page": null,
-      "notes": ["近7天与过去30天端点均未验证。"],
+      "notes": [
+        "近7天接口已发现并完成页面抽样核对。",
+        "30天回退、无数据、加载中与失败状态仍为 NOT VERIFIED；模块保持禁用。"
+      ],
       "periods": {
-        "7d": null,
+        "7d": {
+          "module": "pyramid",
+          "variant": "7d",
+          "request_url": "/toolcenter/api/cpc/queryCampaignReportList",
+          "method": "POST",
+          "payload_schema": {
+            "type": "object",
+            "fields": {
+              "startDate": "string",
+              "endDate": "string",
+              "convertPeriod": "integer",
+              "isSummary": "boolean",
+              "pageIdx": "integer",
+              "pageSize": "integer"
+            }
+          },
+          "query_schema": {
+            "type": "object",
+            "fields": {
+              "hostType": "string",
+              "v": "string"
+            },
+            "values_persisted": false
+          },
+          "response_schema": {
+            "type": "object",
+            "top_level_fields": [
+              "code",
+              "message",
+              "data"
+            ],
+            "data_fields": [
+              "records",
+              "totalPages",
+              "totalRecords"
+            ],
+            "record_fields": [
+              "cashCost",
+              "bonusCost",
+              "orderAmount",
+              "roas",
+              "effectTime"
+            ]
+          },
+          "business_fields": {
+            "roas_7d": "data.records[0].roas",
+            "daily_roas": "data.records[].roas"
+          },
+          "field_paths": {
+            "roas": "data.records[0].roas"
+          },
+          "date_parameters": {
+            "startDate": {
+              "type": "string",
+              "format": "YYYY-MM-DD"
+            },
+            "endDate": {
+              "type": "string",
+              "format": "YYYY-MM-DD"
+            },
+            "interval": "closed_for_observed_7d_sample",
+            "default_range": "previous_7_days_observed"
+          },
+          "hotel_identifier_fields": [],
+          "pagination": {
+            "request_fields": {
+              "pageIdx": "integer",
+              "pageSize": "integer"
+            },
+            "response_fields": [
+              "data.totalRecords",
+              "data.totalPages"
+            ],
+            "observed_page_sizes": [
+              10,
+              500
+            ],
+            "loop_required": "when_totalRecords_exceeds_pageSize",
+            "caveat": "totalPages_was_inconsistent_with_nonempty_records_in_observed_sample"
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "roas_7d",
+              "matched": true
+            },
+            {
+              "field": "daily_rows",
+              "matched": true
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a campaign report query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：金字塔数据报告。",
+            "本轮账号近7天有数据，因此未触发30天回退分支。"
+          ]
+        },
         "30d": null
       }
     },
     "violation": {
       "module": "violation",
       "enabled": false,
-      "result": "unverified",
-      "required_page_context": "unknown",
+      "result": "discovered",
+      "required_page_context": "specific_module_page",
       "can_call_from_any_ebooking_page": null,
-      "notes": ["待当前授权会话重新捕获并完成 Test A-D 与逐字段对照。"],
-      "endpoints": []
+      "notes": [
+        "无违约状态已由测试人员确认并与接口零记录结果一致。",
+        "有违约正样本及多页样本仍为 NOT VERIFIED；模块保持禁用。"
+      ],
+      "endpoints": [
+        {
+          "module": "violation",
+          "request_url": "/toolcenter/api/psi/queryEbkPunlishMent",
+          "method": "POST",
+          "payload_schema": {
+            "type": "object",
+            "fields": {
+              "selectedCategory": "array[integer]",
+              "pageIndex": "integer",
+              "pageSize": "string",
+              "selectedStatus": "string",
+              "defectCategoryId": "integer",
+              "subCategoryId": "integer"
+            }
+          },
+          "query_schema": {
+            "type": "object",
+            "fields": {
+              "hostType": "string",
+              "v": "string"
+            },
+            "values_persisted": false
+          },
+          "response_schema": {
+            "type": "object",
+            "top_level_fields": [
+              "code",
+              "message",
+              "data"
+            ],
+            "data_fields": [
+              "records",
+              "totalPages",
+              "totalRecords",
+              "starNum",
+              "delay",
+              "starHotel"
+            ]
+          },
+          "business_fields": {
+            "violation_count": "data.totalRecords",
+            "violation_records": "data.records"
+          },
+          "field_paths": {
+            "violation_count": "data.totalRecords"
+          },
+          "date_parameters": {
+            "type": "none_observed"
+          },
+          "hotel_identifier_fields": [],
+          "pagination": {
+            "request_fields": {
+              "pageIndex": "integer",
+              "pageSize": "string"
+            },
+            "response_fields": [
+              "data.totalPages",
+              "data.totalRecords"
+            ],
+            "observed_page_size": 30,
+            "loop_required": "when_totalRecords_exceeds_pageSize",
+            "multi_page_sample_observed": false
+          },
+          "request_context_types": [
+            "same_origin_session",
+            "browser_managed_credentials",
+            "header_absence_not_requirement_proof"
+          ],
+          "required_page_context": "specific_module_page",
+          "can_call_from_any_ebooking_page": null,
+          "result": "discovered",
+          "page_sample_checks": [
+            {
+              "field": "violation_status",
+              "expected_case": "no_violation",
+              "matched": true
+            }
+          ],
+          "read_only": false,
+          "read_only_observation": "Observed as a violation list query; no write effect was observed. Formal read-only approval is deferred.",
+          "write_operation_observed": false,
+          "controlled_silent_test": false,
+          "notes": [
+            "自然触发页面：商家违规/违约看板。",
+            "接口路径拼写按真实请求保留。",
+            "本轮仅获得无违约样本。"
+          ]
+        }
+      ]
     }
   }
 }

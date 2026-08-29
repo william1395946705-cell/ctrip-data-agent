@@ -29,6 +29,29 @@ test("默认接口地图完整但全部未验证/禁用", async () => {
   }
 });
 
+test("根接口地图记录真实发现但保持全部禁用", async () => {
+  const map = JSON.parse(await readFile(new URL("../../ctrip_api_map.json", import.meta.url)));
+  const normalized = validateApiMap(map);
+  assert.equal(normalized.map_status, "discovered");
+  assert.equal(normalized.map_kind, "discovery");
+  assert.equal(normalized.modules.operating_report.endpoints.length, 4);
+  assert.equal(normalized.modules.pyramid.periods["7d"].result, "discovered");
+  assert.equal(normalized.modules.pyramid.periods["30d"], null);
+  assert.equal(normalized.modules.violation.endpoints.length, 1);
+  for (const module of Object.values(normalized.modules)) {
+    assert.equal(module.enabled, false);
+    assert.equal(isModuleCallable(module, normalized.map_status, null, normalized.map_kind), false);
+    const endpoints = module.module === "pyramid"
+      ? Object.values(module.periods).filter(Boolean)
+      : module.endpoints;
+    for (const endpoint of endpoints) {
+      assert.equal(endpoint.read_only, false);
+      assert.equal(endpoint.required_page_context, "specific_module_page");
+      assert.equal(endpoint.can_call_from_any_ebooking_page, null);
+    }
+  }
+});
+
 test("接口地图拒绝认证敏感字段和外部端点", () => {
   assert.throws(() => validateApiMap({ map_status: "verified", modules: {
     operating_report: { enabled: true, result: "verified", endpoint: { request_url: "/x", method: "GET", read_only: true, headers: { Authorization: "x" } } }
@@ -87,11 +110,20 @@ test("已验证接口地图可以规范化并保留模块边界", () => {
 });
 
 test("discovery 地图允许记录 read_only=false，但永不允许调用", () => {
-  const map = validateApiMap({ map_kind: "discovery", map_status: "unverified", modules: {
-    operating_report: { enabled: true, result: "verified", endpoints: [{ request_url: "/discovered", method: "GET", read_only: false }] }
+  const map = validateApiMap({ map_kind: "discovery", map_status: "discovered", modules: {
+    operating_report: { enabled: false, result: "discovered", endpoints: [{ request_url: "/discovered", method: "POST", read_only: false }] }
   } });
+  assert.equal(map.map_status, "discovered");
   assert.equal(map.modules.operating_report.endpoints[0].read_only, false);
   assert.equal(isModuleCallable(map.modules.operating_report, map.map_status, null, map.map_kind), false);
+});
+
+test("发现地图拒绝认证、动态会话和指纹字段", () => {
+  for (const key of ["auth", "authKey", "userAuth", "oneId", "fingerPrintKeys", "deviceFingerprint", "spiderkey", "x-traceID"]) {
+    assert.throws(() => validateApiMap({ map_kind: "discovery", map_status: "discovered", modules: {
+      operating_report: { enabled: false, result: "discovered", endpoints: [{ request_url: "/x", method: "POST", read_only: false, payload: { [key]: "LEAK" } }] }
+    } }), /敏感字段/);
+  }
 });
 
 test("经营报告字段和四象限按本店对竞争圈计算", () => {

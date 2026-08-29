@@ -2,13 +2,13 @@
 
 本目录是独立技术验证工程。它不会修改、复制或替代现有“携程 eBooking 数据采集助手”、Chrome Profile、账号表、Excel、SQLite 或运行日志。
 
-当前结论是：**代码框架与离线安全测试已完成，但真实接口地图和 Test A-D 尚未在授权登录酒店上执行，因此还不能回答“整套数据已经可以完全无感采回”。** 根目录与扩展内置的接口地图均保持 `unverified/disabled`，默认不会发起携程业务请求。
+当前结论是：**三个目标页面已发现 6 个真实业务接口，但普通页面 replay 和 Test A-D 尚未执行，因此还不能回答“整套数据已经可以完全无感采回”。** 根目录接口地图只记录 `discovered` 证据且全部禁用；扩展内置地图继续保持 `unverified/disabled`，默认不会发起携程业务请求。
 
 ## 组成
 
 - `python/ctrip_silent_poc/`：可附加到现有 Playwright `BrowserContext` 的被动 Network Inspector、受审核的同页 `fetch` replay、内存请求候选、Test A-D 框架、发现地图生成与旧/新逐字段比较。
 - `extension/`：最小 Manifest V3 扩展，包含 Content Script、MAIN world Connector、Service Worker、本地缓存和调试页。
-- `ctrip_api_map.json`：当前安全占位地图；没有真实 URL/Payload，也没有任何成功声明。
+- `ctrip_api_map.json`：已脱敏的接口发现地图；记录真实 URL path 和结构，但全部模块禁用，不构成 replay 或无感成功声明。
 - `docs/POC_REPORT.md`：按要求整理的阶段报告和下一步验收门槛。
 
 ## 安全边界
@@ -70,6 +70,19 @@ PYTHONPATH=python python3 -m ctrip_silent_poc.cli session \
 4. 金字塔 7 天/30 天状态严格区分成功、明确无数据、加载、请求失败和登录失效。
 5. 违约状态明确为有违约或无违约。
 6. 脱敏扫描未发现认证值。
+
+## 普通页无导航观测
+
+如果只要验证员工正常使用或手工刷新任意 eBooking 页面时会产生哪些请求，可使用：
+
+```sh
+PYTHONPATH=python python3 -m ctrip_silent_poc.cli observe \
+  --cdp-url http://127.0.0.1:PORT \
+  --until-enter \
+  --output-dir artifacts/passive-observation
+```
+
+`observe` 只附加响应监听器，不导航、不刷新、不抢焦点也不操作鼠标键盘。`--until-enter` 允许先开启监听，再由测试人员手工进入页面，数据稳定后在终端按回车结束。输出中的业务模块匹配仅是候选线索，不会被写成已验证接口，也不会触发 replay。
 
 ## 加载扩展
 

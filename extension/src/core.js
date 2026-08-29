@@ -5,6 +5,7 @@ export const RESULT_STATUSES = Object.freeze([
   "request_failed",
   "login_expired",
   "blocked",
+  "discovered",
   "unverified"
 ]);
 
@@ -21,7 +22,12 @@ export const DEFAULT_CONFIG = Object.freeze({
   maxHistory: 20
 });
 
-const SENSITIVE_KEY_RE = /(?:cookie|authorization|proxy-authorization|set-cookie|token|session|csrf|password|passwd|secret|credential|ticket|sso|otp|signature|private[_-]?key|access[_-]?key|api[_-]?key|auth[_-]?value)/i;
+const SENSITIVE_KEY_RE = /(?:auth|cookie|token|session|csrf|password|passwd|secret|credential|ticket|sso|otp|signature|private[_-]?key|access[_-]?key|api[_-]?key)/i;
+const SENSITIVE_EXACT_KEYS = new Set([
+  "clientid", "ctok", "deviceid", "fingerprintkeys", "fp", "fxpcqlniredt",
+  "logid", "oneid", "pvid", "requestid", "sid", "spiderkey", "traceid",
+  "vid", "xsid", "xtraceid"
+]);
 const SENSITIVE_ASSIGNMENT_SOURCE = String.raw`((?:^|[^A-Za-z0-9])(?:data[-_])?(?:api[-_]?key|access[-_]?key|refresh[-_]?key|private[-_]?key|auth[-_]?value|authorization|cookie|csrf(?:[-_]?token)?|session(?:[-_]?id)?|access[-_]?token|refresh[-_]?token))(\s*["']?\s*[:=]\s*["']?)([^"'&,\s<}]+)`;
 const SENSITIVE_VALUE_RE = new RegExp(String.raw`(?:\bBearer\s+[A-Za-z0-9._~+/=-]+|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\b|${SENSITIVE_ASSIGNMENT_SOURCE})`, "i");
 const SENSITIVE_ASSIGNMENT_RE_GLOBAL = new RegExp(SENSITIVE_ASSIGNMENT_SOURCE, "gi");
@@ -31,7 +37,9 @@ const LOGIN_REDIRECT_RE = /(?:\/login(?:\/|$)|\/signin(?:\/|$)|passport)/i;
 const NO_DATA_RE = /(?:暂无|无数据|未投流|没有投放|未投放|not\s*available|no\s*data|no\s*investment|not\s*invested)/i;
 
 export function isSensitiveKey(key) {
-  return typeof key === "string" && SENSITIVE_KEY_RE.test(key);
+  if (typeof key !== "string") return false;
+  const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return normalized.includes("fingerprint") || SENSITIVE_EXACT_KEYS.has(normalized) || SENSITIVE_KEY_RE.test(key);
 }
 
 function assertSafeUrl(value, path) {
@@ -87,7 +95,7 @@ function validEndpoint(endpoint, path, mapKind = "verified") {
   if (endpoint.read_only !== true && !(mapKind === "discovery" && endpoint.read_only === false)) {
     throw new Error(`${path}.read_only 必须为 true`);
   }
-  if (method === "POST" && (typeof endpoint.read_only_justification !== "string" || !endpoint.read_only_justification.trim())) {
+  if (method === "POST" && endpoint.read_only === true && (typeof endpoint.read_only_justification !== "string" || !endpoint.read_only_justification.trim())) {
     throw new Error(`${path}.read_only_justification 必须是非空说明`);
   }
   return { ...endpoint, method, request_url: requestUrl };
@@ -111,7 +119,7 @@ export function validateApiMap(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("接口地图必须是 JSON 对象");
   assertNoSensitiveFields(input);
   const mapStatus = input.map_status || input.status || "unverified";
-  if (!["verified", "unverified", "blocked"].includes(mapStatus)) throw new Error("map_status 必须是 verified/unverified/blocked");
+  if (!["verified", "discovered", "unverified", "blocked"].includes(mapStatus)) throw new Error("map_status 必须是 verified/discovered/unverified/blocked");
   const mapKind = input.map_kind || (mapStatus === "verified" ? "verified" : "discovery");
   if (!["verified", "discovery"].includes(mapKind)) throw new Error("map_kind 必须是 verified/discovery");
   const modules = modulesToObject(input.modules);

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import argparse
 import json
+import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from ctrip_silent_poc.api_map import build_api_map, write_api_map
-from ctrip_silent_poc.cli import _build_test_a_from_captures
+from ctrip_silent_poc.cli import _build_parser, _build_test_a_from_captures, _run_observe
 from ctrip_silent_poc.comparator import compare_results, compute_category
 from ctrip_silent_poc.inspector import NetworkInspector, hotel_fingerprint
 from ctrip_silent_poc.legacy_bridge import attach_inspector
@@ -22,7 +26,7 @@ class FakeRequest:
     url = "https://ebooking.ctrip.com/api/operating-report?token=SECRET&date=2026-08-28"
     method = "POST"
     post_data = json.dumps({"hotelId": "H-1", "csrfToken": "do-not-log", "date": "2026-08-28"})
-    headers = {"accept": "application/json", "content-type": "application/json", "authorization": "Bearer TOP_SECRET", "cookie": "sid=SECRET", "x-requested-with": "XMLHttpRequest"}
+    headers = {"accept": "application/json", "content-type": "application/json", "authorization": "Bearer TOP_SECRET", "cookie": "sid=SECRET", "x-csrf-token": "CSRF_SECRET", "x-requested-with": "XMLHttpRequest"}
 
 
 class FakeResponse:
@@ -109,6 +113,10 @@ class SilentPocTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(record.hotel_fingerprint, hotel_fingerprint({"hotel_id": "H-1", "hotel_name": "测试酒店"}))
             self.assertNotIn("SECRET", json.dumps(record.to_dict(), ensure_ascii=False))
             self.assertEqual(record.payload["csrfToken"], REDACTED)
+            self.assertIn("cookie_header_observed", record.request_context_types)
+            self.assertIn("authorization_header_observed", record.request_context_types)
+            self.assertIn("csrf_header_observed", record.request_context_types)
+            self.assertIn("csrf_request_field_observed", record.request_context_types)
             self.assertEqual(record.payload_schema["type"], "object")
             self.assertNotIn("csrfToken", json.dumps(record.payload_schema))
             self.assertIsNone(vault.get(Module.OPERATING_REPORT.value))
@@ -186,6 +194,198 @@ class SilentPocTests(unittest.IsolatedAsyncioTestCase):
         context.callback(response)
         await inspector.drain()
         self.assertEqual(inspector.records, [])
+
+    async def test_response_body_keywords_do_not_classify_unrelated_order_api(self):
+        request = type("Request", (), {
+            "resource_type": "xhr",
+            "url": "https://ebooking.ctrip.com/restapi/soa2/27204/getOrderDetail",
+            "method": "POST",
+            "post_data": "{}",
+            "headers": {},
+        })()
+        response = type("Response", (), {
+            "request": request,
+            "url": request.url,
+            "status": 200,
+            "headers": {"content-type": "application/json"},
+            "frame": None,
+            "json": lambda self: {"promotion": "金字塔", "notice": "违约提醒"},
+        })()
+        record = await NetworkInspector().capture_response(
+            response,
+            trigger_page="https://ebooking.ctrip.com/ebkorderv3/domestic",
+        )
+        self.assertEqual(record.module, Module.UNKNOWN.value)
+
+    async def test_target_page_route_does_not_classify_unrelated_request(self):
+        request = type("Request", (), {
+            "resource_type": "xhr",
+            "url": "https://ebooking.ctrip.com/restapi/soa2/24278/getMultiNotifyMessage",
+            "method": "POST",
+            "post_data": "{}",
+            "headers": {},
+        })()
+        response = type("Response", (), {
+            "request": request,
+            "url": request.url,
+            "status": 200,
+            "headers": {"content-type": "application/json"},
+            "frame": None,
+            "json": lambda self: {"success": True},
+        })()
+        record = await NetworkInspector().capture_response(
+            response,
+            trigger_page="https://ebooking.ctrip.com/merchant/violation",
+        )
+        self.assertEqual(record.module, Module.UNKNOWN.value)
+        self.assertEqual(record.required_page_context, "specific_module_page")
+
+    async def test_generic_cpc_routes_are_not_roas_but_report_route_is(self):
+        async def capture(path):
+            request = type("Request", (), {
+                "resource_type": "xhr",
+                "url": "https://ebooking.ctrip.com" + path,
+                "method": "POST",
+                "post_data": "{}",
+                "headers": {},
+            })()
+            response = type("Response", (), {
+                "request": request,
+                "url": request.url,
+                "status": 200,
+                "headers": {"content-type": "application/json"},
+                "frame": None,
+                "json": lambda self: {"code": 0, "data": {}},
+            })()
+            return await NetworkInspector().capture_response(response)
+
+        unrelated = await capture("/toolcenter/api/cpc/getAdMangerQrCode")
+        report = await capture("/toolcenter/api/cpc/queryCampaignReportList")
+        self.assertEqual(unrelated.module, Module.UNKNOWN.value)
+        self.assertEqual(report.module, Module.PYRAMID.value)
+
+    async def test_generic_datacenter_route_is_not_operating_report(self):
+        async def capture(path):
+            request = type("Request", (), {
+                "resource_type": "xhr",
+                "url": "https://ebooking.ctrip.com" + path,
+                "method": "POST",
+                "post_data": "{}",
+                "headers": {},
+            })()
+            response = type("Response", (), {
+                "request": request,
+                "url": request.url,
+                "status": 200,
+                "headers": {"content-type": "application/json"},
+                "frame": None,
+                "json": lambda self: {"code": 0, "data": {}},
+            })()
+            return await NetworkInspector().capture_response(response)
+
+        unrelated = await capture("/datacenter/api/dataCenter/report/getVisitorTitle")
+        report = await capture("/datacenter/api/dataCenter/report/getHotelAdvice")
+        self.assertEqual(unrelated.module, Module.UNKNOWN.value)
+        self.assertEqual(report.module, Module.OPERATING_REPORT.value)
+
+    async def test_observe_never_controls_page_or_closes_browser(self):
+        class ObservePage:
+            url = "https://ebooking.ctrip.com/home/mainland"
+
+            def __init__(self):
+                self.evaluate_count = 0
+                self.wait_count = 0
+                self.forbidden_calls = []
+
+            async def evaluate(self, script):
+                self.evaluate_count += 1
+                return {
+                    "ready": True,
+                    "has_body": True,
+                    "has_app": True,
+                    "is_logged_in": True,
+                    "hotel_id": "H-1",
+                    "hotel_name": "测试酒店",
+                }
+
+            async def wait_for_timeout(self, milliseconds):
+                self.wait_count += 1
+
+            async def goto(self, *args, **kwargs):
+                self.forbidden_calls.append("goto")
+
+            async def reload(self, *args, **kwargs):
+                self.forbidden_calls.append("reload")
+
+            async def bring_to_front(self, *args, **kwargs):
+                self.forbidden_calls.append("bring_to_front")
+
+            async def click(self, *args, **kwargs):
+                self.forbidden_calls.append("click")
+
+            async def type(self, *args, **kwargs):
+                self.forbidden_calls.append("type")
+
+        class ObserveContext(FakeContext):
+            def __init__(self, page):
+                super().__init__()
+                self.pages = [page]
+
+        class ObserveBrowser:
+            def __init__(self, context):
+                self.contexts = [context]
+                self.close_count = 0
+
+            async def close(self):
+                self.close_count += 1
+
+        page = ObservePage()
+        context = ObserveContext(page)
+        browser = ObserveBrowser(context)
+
+        class Chromium:
+            async def connect_over_cdp(self, cdp_url):
+                return browser
+
+        class PlaywrightDriver:
+            def __init__(self):
+                self.chromium = Chromium()
+                self.stop_count = 0
+
+            async def stop(self):
+                self.stop_count += 1
+
+        driver = PlaywrightDriver()
+
+        class Starter:
+            async def start(self):
+                return driver
+
+        package = types.ModuleType("playwright")
+        package.__path__ = []
+        async_api = types.ModuleType("playwright.async_api")
+        async_api.async_playwright = lambda: Starter()
+        package.async_api = async_api
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            sys.modules,
+            {"playwright": package, "playwright.async_api": async_api},
+        ), patch("builtins.print"), patch("builtins.input", return_value=""):
+            result = await _run_observe(argparse.Namespace(
+                cdp_url="http://127.0.0.1:9223",
+                page_index=0,
+                seconds=1,
+                until_enter=True,
+                output_dir=directory,
+            ))
+            summary = json.loads((Path(directory) / "passive_observation.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(result, 0)
+        self.assertEqual(summary["result"], "NOT VERIFIED")
+        self.assertEqual(page.evaluate_count, 2)
+        self.assertEqual(page.wait_count, 0)
+        self.assertEqual(page.forbidden_calls, [])
+        self.assertEqual(browser.close_count, 0)
+        self.assertEqual(driver.stop_count, 1)
 
     async def test_discovery_candidate_requires_exact_human_read_only_approval(self):
         vault = InMemoryRequestVault()
@@ -403,6 +603,53 @@ class PureSilentPocTests(unittest.TestCase):
         self.assertEqual(redact_value({"private_key": "LEAK_PRIVATE"})["private_key"], REDACTED)
         self.assertEqual(redact_value({"auth-value": "LEAK_AUTH"})["auth-value"], REDACTED)
 
+    def test_dynamic_session_identifiers_are_redacted_but_business_ids_remain(self):
+        safe_url = sanitize_url(
+            "https://ebooking.ctrip.com/a?_fxpcqlniredt=LEAK_TRACE&x-traceID=LEAK_TRACE_2&date=2026-08-29"
+        )
+        self.assertNotIn("LEAK_TRACE", safe_url)
+        self.assertIn("date=2026-08-29", safe_url)
+        safe_payload = redact_value({
+            "reqHead": {
+                "ubt": {"fp": "LEAK_FP", "oneId": "LEAK_ONEID", "pvid": 123, "sid": "LEAK_SID"},
+                "client": {"clientId": "LEAK_CLIENT"},
+            },
+            "fingerPrintKeys": "LEAK_FINGERPRINT",
+            "spiderkey": "LEAK_SPIDERKEY",
+            "spiderVersion": "SAFE_VERSION",
+            "orderId": "ORDER-1",
+            "hotelId": "HOTEL-1",
+        })
+        self.assertNotIn("LEAK_", json.dumps(safe_payload))
+        self.assertEqual(safe_payload["fingerPrintKeys"], REDACTED)
+        self.assertEqual(safe_payload["spiderkey"], REDACTED)
+        self.assertEqual(safe_payload["spiderVersion"], "SAFE_VERSION")
+        self.assertEqual(safe_payload["orderId"], "ORDER-1")
+        self.assertEqual(safe_payload["hotelId"], "HOTEL-1")
+
+    def test_api_map_resanitizes_request_url(self):
+        capture = {
+            "module": "operating_report",
+            "request_url": "https://ebooking.ctrip.com/api/operating-report?x-traceID=LEAK_TRACE&oneId=LEAK_ONEID&date=2026-08-29",
+            "method": "GET",
+        }
+        serialized = json.dumps(build_api_map([capture]))
+        self.assertNotIn("LEAK_TRACE", serialized)
+        self.assertNotIn("LEAK_ONEID", serialized)
+        self.assertIn("date=2026-08-29", serialized)
+
+    def test_observe_cli_is_available_as_passive_discovery_command(self):
+        args = _build_parser().parse_args([
+            "observe",
+            "--cdp-url", "http://127.0.0.1:9223",
+            "--seconds", "45",
+            "--until-enter",
+            "--output-dir", "artifacts/test-observe",
+        ])
+        self.assertEqual(args.command, "observe")
+        self.assertEqual(args.seconds, 45)
+        self.assertTrue(args.until_enter)
+
     def test_api_map_starts_unverified_and_requires_measurement(self):
         capture = {"module": "operating_report", "request_url": "https://ebooking.ctrip.com/api/operating-report", "method": "POST", "payload_schema": {"type": "object"}, "response_schema": {"type": "object"}, "required_page_context": "specific_module_page"}
         initial = build_api_map([capture])
@@ -412,6 +659,7 @@ class PureSilentPocTests(unittest.TestCase):
         self.assertIsNone(initial_module["can_call_from_any_ebooking_page"])
         self.assertEqual(len(initial_module["endpoints"]), 1)
         self.assertFalse(initial_module["endpoints"][0]["read_only"])
+        self.assertEqual(initial_module["endpoints"][0]["request_context_types"], [])
         measured = build_api_map([capture], measured_results={capture["request_url"]: {"result": "success", "can_call_from_any_ebooking_page": True, "required_page_context": "any_ebooking_page"}})
         self.assertEqual(measured["modules"]["operating_report"]["result"], "success")
         self.assertTrue(measured["modules"]["operating_report"]["can_call_from_any_ebooking_page"])
@@ -420,6 +668,63 @@ class PureSilentPocTests(unittest.TestCase):
             output = Path(directory) / "ctrip_api_map.json"
             write_api_map(output, [capture])
             self.assertEqual(json.loads(output.read_text())["modules"]["operating_report"]["result"], "unverified")
+
+    def test_discovered_map_keeps_modules_disabled_and_copies_safe_evidence(self):
+        capture = {
+            "module": "operating_report",
+            "request_url": "https://ebooking.ctrip.com/api/operating-report",
+            "method": "POST",
+            "payload_schema": {"type": "object"},
+            "response_schema": {"type": "object"},
+            "required_page_context": "specific_module_page",
+        }
+        evidence = {
+            capture["request_url"]: {
+                "result": "discovered",
+                "required_page_context": "specific_module_page",
+                "field_paths": {"psi_score": "data.serviceScore"},
+                "date_parameters": {"startDate": {"type": "string"}},
+                "pagination": {"kind": "none_observed"},
+                "page_sample_checks": [{"field": "psi_score", "matched": True}],
+                "read_only_observation": "query semantics; no mutation observed",
+                "write_operation_observed": False,
+            }
+        }
+        result = build_api_map([capture], measured_results=evidence, map_status="discovered")
+        module = result["modules"]["operating_report"]
+        self.assertEqual(result["map_status"], "discovered")
+        self.assertEqual(module["result"], "discovered")
+        self.assertFalse(module["enabled"])
+        self.assertEqual(module["endpoints"][0]["field_paths"]["psi_score"], "data.serviceScore")
+
+    def test_api_map_filters_context_types_and_resanitizes_schemas_and_notes(self):
+        capture = {
+            "module": "operating_report",
+            "request_url": "https://ebooking.ctrip.com/api/operating-report",
+            "method": "POST",
+            "payload_schema": {"properties": {"csrfToken": {"type": "string"}, "date": {"type": "string"}}},
+            "response_schema": {"note": "token=LEAK"},
+            "request_context_types": ["same_origin_session", "LEAK_CONTEXT"],
+            "notes": ["authorization=LEAK"],
+        }
+        endpoint = build_api_map([capture], measured_results={
+            capture["request_url"]: {
+                "result": "invented-status",
+                "required_page_context": "authorization=LEAK_CONTEXT",
+                "field_paths": {
+                    "safe": "data.date",
+                    "unsafe": "data.csrfToken",
+                },
+                "notes": ["cookie=LEAK_NOTE"],
+            }
+        })["modules"]["operating_report"]["endpoints"][0]
+        serialized = json.dumps(endpoint)
+        self.assertNotIn("LEAK", serialized)
+        self.assertNotIn("csrfToken", serialized)
+        self.assertEqual(endpoint["request_context_types"], ["same_origin_session"])
+        self.assertEqual(endpoint["field_paths"], {"safe": "data.date"})
+        self.assertEqual(endpoint["result"], "unverified")
+        self.assertEqual(endpoint["required_page_context"], "unknown")
 
     def test_comparator_covers_required_fields_and_category(self):
         old, new = expected_result(), expected_result()
