@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 
 from .models import CaptureRecord, Module
+from .redaction import sanitize_url
 
 
 def _now_iso() -> str:
@@ -25,7 +26,7 @@ def _measurement_for(
 
 def _safe_entry(raw: Mapping[str, Any], measured_results: Mapping[str, Mapping[str, Any] | bool | str]) -> dict[str, Any]:
     module = str(raw.get("module") or Module.UNKNOWN.value)
-    url = str(raw.get("request_url") or "")
+    url = sanitize_url(raw.get("request_url")) if raw.get("request_url") else ""
     method = str(raw.get("method") or "GET").upper()
     notes = raw.get("notes") or []
     notes = [notes] if isinstance(notes, str) else [str(note) for note in notes]
@@ -113,7 +114,7 @@ def build_api_map(
     for capture in captures:
         raw = capture.to_dict() if isinstance(capture, CaptureRecord) else dict(capture)
         module = str(raw.get("module") or Module.UNKNOWN.value)
-        url = str(raw.get("request_url") or "")
+        url = sanitize_url(raw.get("request_url")) if raw.get("request_url") else ""
         method = str(raw.get("method") or "GET").upper()
         if not url or module == Module.UNKNOWN.value:
             continue

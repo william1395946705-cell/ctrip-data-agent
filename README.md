@@ -71,6 +71,19 @@ PYTHONPATH=python python3 -m ctrip_silent_poc.cli session \
 5. 违约状态明确为有违约或无违约。
 6. 脱敏扫描未发现认证值。
 
+## 普通页无导航观测
+
+如果只要验证员工正常使用或手工刷新任意 eBooking 页面时会产生哪些请求，可使用：
+
+```sh
+PYTHONPATH=python python3 -m ctrip_silent_poc.cli observe \
+  --cdp-url http://127.0.0.1:PORT \
+  --seconds 60 \
+  --output-dir artifacts/passive-observation
+```
+
+`observe` 只附加响应监听器，不导航、不刷新、不抢焦点也不操作鼠标键盘。输出中的业务模块匹配仅是候选线索，不会被写成已验证接口，也不会触发 replay。
+
 ## 加载扩展
 
 在 Chrome 扩展管理页手工“加载已解压的扩展程序”，选择 `extension/`。默认地图未验证，所以初次加载只会识别页面状态并显示调试信息，不会发送业务接口请求。真实地图导入与调试方式见 `extension/README.md`。

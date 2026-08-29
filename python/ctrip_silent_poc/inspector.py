@@ -69,7 +69,7 @@ async def _maybe_await(value: Any) -> Any:
 
 
 def classify_module(*values: Any) -> str:
-    """Classify a request using route/page hints, falling back to unknown."""
+    """Classify using explicit hints and request/response routes only."""
 
     if values:
         explicit = str(values[0] or "").strip().lower()
@@ -381,9 +381,13 @@ class NetworkInspector:
             status = None
         raw_body = await _response_body(response, content_type)
         observed_page = _page_url(response, trigger_page)
-        # Response body keywords are useful in discovery when endpoint names
-        # are opaque; the body is never stored raw, only classified here.
-        module = classify_module(module_hint, request_url, response_url, observed_page, raw_body)
+        # Classify from operator hint and request/page routes only.  Response
+        # bodies often contain unrelated notification or order text mentioning
+        # promotions/violations and previously produced unsafe false positives.
+        # The trigger-page route is context evidence only.  Using it for the
+        # module would label every notification/order request made by a target
+        # page as that page's business API.
+        module = classify_module(module_hint, request_url, response_url)
         variant = _pyramid_variant(module, request_url, request_payload)
         safe_payload = redact_value(request_payload, max_string_length=self.max_body_chars)
         safe_body = redact_value(raw_body, max_string_length=self.max_body_chars)
@@ -396,7 +400,7 @@ class NetworkInspector:
             context = "any_ebooking_page"
         record = CaptureRecord(
             module=module,
-            request_url=request_url,
+            request_url=sanitize_url(request_url),
             method=method,
             payload_schema=schema_of(request_payload),
             response_schema=schema_of(raw_body),
@@ -407,8 +411,8 @@ class NetworkInspector:
             variant=variant,
             status=status,
             content_type=content_type,
-            response_url=response_url,
-            trigger_page=observed_page,
+            response_url=sanitize_url(response_url) if response_url else None,
+            trigger_page=sanitize_url(observed_page) if observed_page else None,
             request_time=request_time or _now_iso(),
             headers=headers,
             payload=safe_payload,
