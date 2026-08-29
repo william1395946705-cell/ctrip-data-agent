@@ -78,15 +78,17 @@ def classify_module(*values: Any) -> str:
     text = " ".join(str(value or "").lower() for value in values)
     # Avoid matching generic words such as ``report`` in unrelated APIs where
     # an explicit caller hint identifies the module.
-    if any(token in text for token in ("pyramid", "jinzita", "金字塔", "roas", "广告投产比", "/cpc/datareport", "toolcenter/api/cpc")):
+    if any(token in text for token in (
+        "pyramid", "jinzita", "金字塔", "roas", "广告投产比",
+        "querycampaignreportlist", "querycampaignsummaryreport",
+    )):
         return Module.PYRAMID.value
     if any(token in text for token in ("violation", "breach", "contract", "违约", "违规", "punlishment", "punishment", "queryebkpunlishment")):
         return Module.VIOLATION.value
     if any(token in text for token in (
         "operating-report", "operating_report", "经营报告", "operatingreport",
-        "/datacenter/api/", "flowanalysis", "hoteladvice", "dayreportserverquantity",
-        "capacityoverview", "tensityoverview", "marketoverview", "picturequalityscore",
-        "fetchcurrenthotelseqinfo", "列表页曝光", "曝光转化率", "下单转化率",
+        "gethoteladvice", "fetchmarketoverviewv2", "getdayreportserverquantity",
+        "queryflowtransfornewv1",
     )):
         return Module.OPERATING_REPORT.value
     return Module.UNKNOWN.value
@@ -133,6 +135,41 @@ def _request_headers(response: Any) -> Mapping[str, Any]:
     request = _get(response, "request")
     headers = _get(request, "headers", {})
     return headers if isinstance(headers, Mapping) else {}
+
+
+def _has_named_key(value: Any, *signals: str) -> bool:
+    """Inspect key names only; never serialize or compare credential values."""
+
+    wanted = tuple(re.sub(r"[^a-z0-9]", "", signal.lower()) for signal in signals)
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            normalized = re.sub(r"[^a-z0-9]", "", str(key).lower())
+            if any(signal in normalized for signal in wanted):
+                return True
+            if _has_named_key(child, *signals):
+                return True
+    elif isinstance(value, (list, tuple)):
+        return any(_has_named_key(child, *signals) for child in value)
+    return False
+
+
+def _request_context_types(headers: Mapping[str, Any], payload: Any, request_url: str) -> List[str]:
+    """Return credential *types/presence* without retaining any values."""
+
+    names = {str(name).strip().lower() for name in headers}
+    query_keys = {name for name, _ in parse_qsl(urlsplit(request_url).query, keep_blank_values=True)}
+    csrf_in_query = any("csrf" in name.lower() or "xsrf" in name.lower() for name in query_keys)
+    result = ["same_origin_session", "browser_managed_credentials"]
+    if "cookie" in names:
+        result.append("cookie_header_observed")
+    if "authorization" in names:
+        result.append("authorization_header_observed")
+    if any("csrf" in name or "xsrf" in name for name in names):
+        result.append("csrf_header_observed")
+    if csrf_in_query or _has_named_key(payload, "csrf", "xsrf"):
+        result.append("csrf_request_field_observed")
+    result.append("header_absence_not_requirement_proof")
+    return result
 
 
 def _request_post_data(response: Any) -> Any:
@@ -368,7 +405,9 @@ class NetworkInspector:
         response_url = _response_url(response)
         method = _request_method(response)
         request_payload = _request_post_data(response)
-        headers = safe_headers(_request_headers(response))
+        request_headers = _request_headers(response)
+        headers = safe_headers(request_headers)
+        request_context_types = _request_context_types(request_headers, request_payload, request_url)
         raw_content_type = _get(response, "headers", {})
         if isinstance(raw_content_type, Mapping):
             content_type = str(raw_content_type.get("content-type", raw_content_type.get("Content-Type", "")) or "")
@@ -415,6 +454,7 @@ class NetworkInspector:
             trigger_page=sanitize_url(observed_page) if observed_page else None,
             request_time=request_time or _now_iso(),
             headers=headers,
+            request_context_types=request_context_types,
             payload=safe_payload,
             response=safe_body,
             test_a_batch_id=self.test_a_batch_id,

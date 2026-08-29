@@ -49,6 +49,8 @@ class CaptureRecord:
     trigger_page: Optional[str] = None
     request_time: Optional[str] = None
     headers: Dict[str, str] = field(default_factory=dict)
+    # Type names only.  Authentication values are never copied.
+    request_context_types: List[str] = field(default_factory=list)
     payload: Any = None
     response: Any = None
     # Test A provenance.  The batch id and one-way hotel fingerprint are safe

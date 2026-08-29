@@ -250,8 +250,16 @@ async def _run_observe(args: argparse.Namespace) -> int:
             capture_enabled=True,
             hotel_fingerprint=hotel_fingerprint(page_hotel),
         ).attach(context, target_page=page)
-        await page.wait_for_timeout(max(1, args.seconds) * 1000)
+        capture_started_at = asyncio.get_running_loop().time()
+        if getattr(args, "until_enter", False):
+            await asyncio.to_thread(
+                input,
+                "被动监听已开启；请由测试人员手工进入目标页并等待数据稳定，完成后按回车结束捕获：",
+            )
+        else:
+            await page.wait_for_timeout(max(1, args.seconds) * 1000)
         await inspector.drain()
+        capture_seconds = max(1, round(asyncio.get_running_loop().time() - capture_started_at))
 
         after_url = sanitize_url(page.url)
         state_after = await inspect_current_page(page)
@@ -275,7 +283,7 @@ async def _run_observe(args: argparse.Namespace) -> int:
         write_api_map(output_dir / "ctrip_api_map.json", inspector.records)
         summary = {
             "observed_at": datetime.now(timezone.utc).isoformat(),
-            "seconds": max(1, args.seconds),
+            "seconds": capture_seconds,
             "page_before": before_url,
             "page_after": after_url,
             "page_unchanged": before_url == after_url,
@@ -493,6 +501,11 @@ def _build_parser() -> argparse.ArgumentParser:
     observe.add_argument("--cdp-url", required=True, help="existing authorized local Chrome CDP endpoint")
     observe.add_argument("--page-index", type=int, default=0)
     observe.add_argument("--seconds", type=int, default=30, help="passive capture window in seconds")
+    observe.add_argument(
+        "--until-enter",
+        action="store_true",
+        help="keep listening until the operator presses Enter; never controls the page",
+    )
     observe.add_argument("--output-dir", default="artifacts/passive-observation")
 
     session = subparsers.add_parser("session", help="attach to an existing authorized CDP browser without navigation")
