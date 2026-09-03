@@ -21,6 +21,7 @@ from .api_map import write_api_map
 from .comparator import compare_results, compute_category
 from .inspector import NetworkInspector, extract_hotel_ids, hotel_fingerprint
 from .legacy_control import adapt_legacy_batch_result, legacy_control_ready, run_legacy_control_from_authorized_page
+from .live_comparison import compare_legacy_with_bracketed_silent
 from .models import CaptureRecord, CollectorResult, Module
 from .redaction import safe_error, sanitize_url
 from .replay import (
@@ -314,6 +315,79 @@ async def _run_observe(args: argparse.Namespace) -> int:
         await playwright.stop()
 
 
+async def _run_live_comparison(args: argparse.Namespace) -> int:
+    """Bracket the untouched legacy collector with two ordinary-page replays."""
+
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    before_snapshots: list[Mapping[str, Any]] = []
+    after_snapshots: list[Mapping[str, Any]] = []
+    legacy: Mapping[str, Any] | None = None
+    as_of_date = args.as_of_date
+    if args.manual_control:
+        legacy = _load_json(args.manual_control) or {}
+        collector = legacy.get("collector") if isinstance(legacy.get("collector"), Mapping) else {}
+        if collector.get("mode") != "manual_page_control" or collector.get("failed_modules"):
+            raise RuntimeError("Manual page control evidence is incomplete.")
+        control_date = str(collector.get("operating_data_date") or "")
+        if as_of_date and as_of_date != control_date:
+            raise RuntimeError("Requested date does not match the manual page control date.")
+        as_of_date = control_date
+    before_report = await run_target_replay(
+        cdp_url=args.cdp_url,
+        test_id=args.test_id,
+        api_map_path=args.api_map,
+        capture_root=args.capture_root,
+        output_path=output_dir / "silent_before_audit.json",
+        page_index=args.page_index,
+        as_of_date=as_of_date,
+        _comparison_snapshot_sink=before_snapshots,
+    )
+    if before_report.get("result") != "PASS" or len(before_snapshots) != 1:
+        raise RuntimeError("Silent before snapshot did not pass the controlled replay gates.")
+
+    if args.manual_control:
+        assert legacy is not None
+    else:
+        legacy_path = output_dir / "legacy_control.sanitized.json"
+        legacy = await asyncio.to_thread(
+            run_legacy_control_from_authorized_page,
+            cdp_url=args.cdp_url,
+            runtime_dir=args.runtime_dir,
+            output_path=legacy_path,
+            speed=args.speed,
+        )
+        if not legacy_control_ready(legacy):
+            raise RuntimeError("Legacy control evidence is incomplete.")
+
+    after_report = await run_target_replay(
+        cdp_url=args.cdp_url,
+        test_id=args.test_id,
+        api_map_path=args.api_map,
+        capture_root=args.capture_root,
+        output_path=output_dir / "silent_after_audit.json",
+        page_index=args.page_index,
+        as_of_date=as_of_date,
+        _comparison_snapshot_sink=after_snapshots,
+    )
+    if after_report.get("result") != "PASS" or len(after_snapshots) != 1:
+        raise RuntimeError("Silent after snapshot did not pass the controlled replay gates.")
+
+    comparison = compare_legacy_with_bracketed_silent(legacy, before_snapshots[0], after_snapshots[0])
+    _write_json(output_dir / "field_comparison.local.json", comparison)
+    print(json.dumps({
+        "result": comparison["result"],
+        "field_count": comparison["field_count"],
+        "exact_match_count": comparison["exact_match_count"],
+        "time_drift_count": comparison["time_drift_count"],
+        "mismatch_count": comparison["mismatch_count"],
+        "page_url_unchanged": bool(
+            before_report.get("page_url_unchanged") and after_report.get("page_url_unchanged")
+        ),
+    }, ensure_ascii=False))
+    return 0 if comparison["result"] == "PASS" else 1
+
+
 async def _run_session(args: argparse.Namespace) -> int:
     try:
         from playwright.async_api import async_playwright
@@ -537,6 +611,22 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="one-time operator confirmation; binds the exact gitignored capture set to the current hotel",
     )
+
+    live_compare = subparsers.add_parser(
+        "compare-live",
+        help="compare one untouched legacy run with bracketed Silent Replay snapshots",
+    )
+    live_compare.add_argument("--cdp-url", required=True, help="existing authorized local Chrome CDP endpoint")
+    control_source = live_compare.add_mutually_exclusive_group(required=True)
+    control_source.add_argument("--runtime-dir", help="existing old collector Runtime directory")
+    control_source.add_argument("--manual-control", help="gitignored normalized values from operator-supplied page screenshots")
+    live_compare.add_argument("--test-id", choices=("B", "C"), default="B")
+    live_compare.add_argument("--as-of-date", help="ISO report date; manual control defaults to its recorded operating date")
+    live_compare.add_argument("--page-index", type=int, default=0)
+    live_compare.add_argument("--api-map", default="ctrip_api_map.json")
+    live_compare.add_argument("--capture-root", default="artifacts/target-discovery")
+    live_compare.add_argument("--output-dir", default="artifacts/legacy-vs-silent")
+    live_compare.add_argument("--speed", choices=("fast", "stable"), default="stable")
     return parser
 
 
@@ -593,6 +683,8 @@ def main(argv: list[str] | None = None) -> int:
             "write_side_effect_observed": report.get("write_side_effect_observed"),
         }, ensure_ascii=False))
         return 0 if report.get("result") == "PASS" else 1
+    if args.command == "compare-live":
+        return asyncio.run(_run_live_comparison(args))
     return 2
 
 

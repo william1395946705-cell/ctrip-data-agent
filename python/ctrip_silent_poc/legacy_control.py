@@ -13,6 +13,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 import importlib
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 import sys
@@ -37,6 +38,52 @@ LEGACY_OPERATING_FIELDS = {
 }
 
 PYRAMID_OBSERVATIONS = frozenset({"7d", "30d", "no-investment", "unknown"})
+
+
+def _safe_legacy_failure_category(raw: Mapping[str, Any], log_text: str) -> str | None:
+    if str(raw.get("status") or "") != "失败":
+        return None
+    if str(raw.get("failure_kind") or "") == "无法登录":
+        if "安全验证" in log_text:
+            return "safety_verification_required"
+        return "login_unavailable"
+    raw_error = str(raw.get("error") or "")
+    diagnostic_text = log_text + "\n" + raw_error
+    if "未在账号配置中找到当前门店对应的携程账号" in diagnostic_text:
+        return "hotel_profile_mapping_missing"
+    if (
+        "Profile正在使用" in diagnostic_text
+        or "Profile被占用" in diagnostic_text
+        or "浏览器配置正在被占用" in diagnostic_text
+        or "profile appears to be in use" in diagnostic_text.lower()
+    ):
+        return "profile_busy"
+    if "未找到本地 Chrome" in diagnostic_text:
+        return "chrome_missing"
+    if (
+        ("Chrome" in diagnostic_text or "浏览器" in diagnostic_text)
+        and ("启动失败" in diagnostic_text or "无法启动" in diagnostic_text)
+    ):
+        return "browser_start_failed"
+    if "未能打开携程地址" in diagnostic_text:
+        return "initial_navigation_failed"
+    if "未返回可用Profile上下文" in diagnostic_text:
+        return "browser_context_unavailable"
+    return "collector_failed"
+
+
+def _safe_legacy_failure_phase(raw: Mapping[str, Any]) -> str | None:
+    if str(raw.get("status") or "") != "失败":
+        return None
+    if not raw.get("profile_open_seconds"):
+        return "setup_or_browser_start"
+    if not raw.get("operating_seconds"):
+        return "session_or_operating_report"
+    if not raw.get("pyramid_seconds"):
+        return "pyramid"
+    if not raw.get("violation_seconds"):
+        return "violation"
+    return "finalization"
 
 
 def _legacy_violation(value: Any) -> str | None:
@@ -250,7 +297,10 @@ def run_legacy_control_from_authorized_page(
             else:
                 observation = "unknown"
             normalized = adapt_legacy_batch_result(raw, pyramid_observation=observation)
+            normalized["collected_at"] = datetime.now(timezone.utc).isoformat()
             normalized["collector"]["legacy_exit_code"] = int(exit_code)
+            normalized["collector"]["legacy_failure_category"] = _safe_legacy_failure_category(raw, log_text)
+            normalized["collector"]["legacy_failure_phase"] = _safe_legacy_failure_phase(raw)
             output.parent.mkdir(parents=True, exist_ok=True)
             output.write_text(json.dumps(normalized, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except Exception:
