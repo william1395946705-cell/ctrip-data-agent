@@ -14,7 +14,12 @@ from ctrip_silent_poc.cli import _build_parser, _build_test_a_from_captures, _ru
 from ctrip_silent_poc.comparator import compare_results, compute_category
 from ctrip_silent_poc.inspector import NetworkInspector, hotel_fingerprint
 from ctrip_silent_poc.legacy_bridge import attach_inspector
-from ctrip_silent_poc.legacy_control import adapt_legacy_batch_result, legacy_control_ready
+from ctrip_silent_poc.legacy_control import (
+    _safe_legacy_failure_category,
+    _safe_legacy_failure_phase,
+    adapt_legacy_batch_result,
+    legacy_control_ready,
+)
 from ctrip_silent_poc.models import CaptureRecord, Module, ResultStatus
 from ctrip_silent_poc.redaction import REDACTED, redact_value, safe_headers, sanitize_url
 from ctrip_silent_poc.replay import InMemoryRequestVault, RequestTemplate, SilentCollector, classify_replay_response, normalize_violation, replay_request
@@ -480,6 +485,32 @@ class SilentPocTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PureSilentPocTests(unittest.TestCase):
+    def test_legacy_failure_category_is_allowlisted(self):
+        raw = {"status": "失败", "failure_kind": "无法登录", "error": "sensitive raw detail"}
+        self.assertEqual(_safe_legacy_failure_category(raw, "Profile需要安全验证"), "safety_verification_required")
+        self.assertEqual(_safe_legacy_failure_category(raw, ""), "login_unavailable")
+        self.assertEqual(
+            _safe_legacy_failure_category({"status": "失败"}, "Profile正在使用: /sensitive/path"),
+            "profile_busy",
+        )
+        self.assertEqual(_safe_legacy_failure_category({"status": "失败", "error": "secret"}, ""), "collector_failed")
+        self.assertEqual(
+            _safe_legacy_failure_category({"status": "失败", "error": "浏览器配置正在被占用: secret"}, ""),
+            "profile_busy",
+        )
+        self.assertEqual(
+            _safe_legacy_failure_category(
+                {"status": "失败", "error": "未在账号配置中找到当前门店对应的携程账号: secret"},
+                "",
+            ),
+            "hotel_profile_mapping_missing",
+        )
+        self.assertEqual(_safe_legacy_failure_phase({"status": "失败", "profile_open_seconds": 0}), "setup_or_browser_start")
+        self.assertEqual(
+            _safe_legacy_failure_phase({"status": "失败", "profile_open_seconds": 1.0, "operating_seconds": 0}),
+            "session_or_operating_report",
+        )
+
     def test_legacy_adapter_allowlists_fields_and_never_guesses_pyramid(self):
         raw = {
             "hotel_name": "测试酒店",

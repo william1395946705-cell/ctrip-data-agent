@@ -1,15 +1,35 @@
 # Project Handoff
 
-更新时间：2026-08-29
+更新时间：2026-09-03
 
 ## 当前分支与基线
 
-当前任务分支为 `codex/replay-target-endpoints`，从 PR #1 合并后的最新
-`main` 提交 `ed9a1c627684d5e62196dfff201576a854a73690` 创建。
+当前任务分支为 `codex/compare-legacy-vs-silent`，从 PR #2 合并后的
+`main` 提交 `8b46a32640b9a05678685f3931bb05355a2a02a9` 创建。
 
-本轮只验证上一阶段已经 DISCOVERED 的 6 个精确业务接口。没有重新发现接口，没有自动进入经营报告、金字塔或违约看板，没有导航、刷新、点击、输入、抢焦点、打开新标签或修改后台数据。Test B/C/D 的页面切换与刷新均由测试人员手工完成。
+本轮对同一授权测试酒店、同一数据日的页面人工对照与 Silent Replay 进行 13 字段对比。程序仅停留在普通 eBooking 首页，没有导航、刷新、点击、输入、抢焦点或打开新标签。
 
-## 受控 Replay 结论
+## 本轮真实对照结论
+
+- 对照字段：13。
+- 完全一致：13。
+- `TIME_DRIFT`：0。
+- 真正不一致：0。
+- Silent 前后两次快照一致，当前页 URL、焦点状态、登录态和酒店身份保持不变。
+- 经营数据日为 2026-09-02；7 天 ROAS 窗口为 2026-08-27 至 2026-09-02。只更换已审核 payload 中的日期值，路径、method、字段集合和只读限制不变。
+
+逐字段覆盖：经营提醒、昨日离店间夜、竞争圈排名、点评分、PSI、本店/竞争圈曝光、本店/竞争圈曝光转化率、本店/竞争圈下单转化率、7 天 ROAS 和无违约状态。业务原值仅保存在 gitignored `artifacts/legacy-vs-silent/` 中，不进入 Git 或文档。
+
+`TIME_DRIFT` 不由时间差自动推断；只有 Silent 前后值确实变化，且对照值等于某个快照或被两个数值包围时才能标记。排名按完整 `rank / total` 比较，不得只比较第一个数字。
+
+## 对照证据边界
+
+测试人员提供了同日经营报告、金字塔和违约看板截图，作为 `manual_page_control` 真实页面对照。旧采集器自动对照尝试在启动前被 `hotel_profile_mapping_missing` 拦截，没有伪造旧采集器机器输出。因此：
+
+- 可确认 Silent 返回值与同日真实页面 13/13 一致。
+- 严格的“旧采集器机器输出”对照仍未完成；根 API Map 继续 `discovered/disabled`，不因本轮截图对照而升级为生产可执行。
+
+## 上一阶段受控 Replay 结论
 
 | Endpoint | 业务 | Test B 首页 | Test C 订单页 | Test D 订单页手工刷新后 |
 | --- | --- | --- | --- | --- |
@@ -109,7 +129,7 @@ python3 -m compileall -q python
 cd extension && npm test
 ```
 
-最终结果：Python 37/37 通过，Python compileall 通过，Extension 19/19 通过。
+最终结果：Python 45/45 通过，Python compileall 通过，Extension 19/19 通过。
 
 ## 当前技术结论与下一步
 

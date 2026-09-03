@@ -12,7 +12,7 @@ import datetime as _dt
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Optional
 from urllib.parse import parse_qsl, urlsplit
@@ -434,6 +434,42 @@ def compile_target_replays(
     return compiled
 
 
+def retarget_replay_dates(
+    compiled: Mapping[str, tuple[CompiledReplay, ...]],
+    as_of_date: str,
+) -> dict[str, tuple[CompiledReplay, ...]]:
+    """Update only reviewed report dates while preserving request shape."""
+
+    try:
+        end_date = _dt.date.fromisoformat(as_of_date)
+    except (TypeError, ValueError):
+        raise ValueError("as_of_date must be an ISO calendar date.") from None
+    start_7d = end_date - _dt.timedelta(days=6)
+    output: dict[str, tuple[CompiledReplay, ...]] = {}
+    for endpoint_id, steps in compiled.items():
+        updated_steps = []
+        for step in steps:
+            body = dict(step.template.body) if isinstance(step.template.body, Mapping) else step.template.body
+            if isinstance(body, dict):
+                if endpoint_id == "operating_market_overview":
+                    body["startDate"] = end_date.isoformat()
+                elif endpoint_id == "operating_flow":
+                    body["startDate"] = end_date.isoformat()
+                    body["endDate"] = end_date.isoformat()
+                elif endpoint_id == "pyramid_7d":
+                    body["startDate"] = start_7d.isoformat()
+                    body["endDate"] = end_date.isoformat()
+            template = replace(step.template, body=body)
+            signature = {
+                "path": step.audit.path,
+                "payload": body,
+                "variant": step.variant,
+            }
+            updated_steps.append(replace(step, template=template, template_sha256=_payload_signature(signature)))
+        output[endpoint_id] = tuple(updated_steps)
+    return output
+
+
 def _capture_set_sha256(compiled: Mapping[str, tuple[CompiledReplay, ...]]) -> str:
     evidence = []
     for endpoint_id in sorted(compiled):
@@ -622,6 +658,16 @@ def _records_complete(endpoint_id: str, value: Any, template: RequestTemplate) -
     return count == int(total)
 
 
+def _hotel_id_sequence(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        str(row.get("hotelId") or "").strip().lower()
+        for row in value
+        if isinstance(row, Mapping) and str(row.get("hotelId") or "").strip()
+    ]
+
+
 def _endpoint_schema(api_map_endpoints: Mapping[str, Mapping[str, Any]], path: str) -> Mapping[str, Any]:
     endpoint = api_map_endpoints[path]
     schema = endpoint.get("response_schema")
@@ -644,6 +690,117 @@ def _verified_fields(endpoint_id: str) -> list[str]:
         "pyramid_7d": ["roas_7d", "daily_rows", "totalRecords", "records_complete"],
         "violation_list": ["totalRecords_zero", "records_empty", "status_no_violation"],
     }.get(endpoint_id, [])
+
+
+def build_silent_comparison_snapshot(
+    projections: Mapping[str, list[Any]],
+    *,
+    hotel: Mapping[str, Any],
+    collected_at: str,
+    baseline_row_order_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Reduce in-memory endpoint projections to the legacy comparison schema.
+
+    The returned value contains business metrics but no request data or
+    authentication material. Callers must keep it under a gitignored local
+    artifact directory.
+    """
+
+    advice = (projections.get("operating_advice") or [None])[0]
+    market = (projections.get("operating_market_overview") or [None])[0]
+    scores = (projections.get("operating_scores") or [None])[0]
+    flow = (projections.get("operating_flow") or [None])[0]
+    pyramid_steps = projections.get("pyramid_7d") or []
+    violation = (projections.get("violation_list") or [None])[0]
+
+    operating_reminder = None
+    if isinstance(advice, Mapping) and isinstance(advice.get("bad"), list):
+        reminder_count = len(advice["bad"])
+        operating_reminder = "无" if reminder_count == 0 else f"经营提醒{reminder_count}项，需点开查看"
+
+    departed_room_nights = market.get("quantity") if isinstance(market, Mapping) else None
+    room_night_rank = None
+    if isinstance(market, Mapping):
+        rank = _number(market.get("rankOfQuantity"))
+        competitor_count = _number(market.get("competitorNumber"))
+        if rank is not None and competitor_count is not None:
+            room_night_rank = f"{int(rank)} / {int(competitor_count)}"
+
+    page_hotel_id = str(hotel.get("hotel_id") or "").strip().lower()
+    hotel_row = None
+    comp_row = None
+    if isinstance(flow, Mapping) and isinstance(flow.get("rows"), list):
+        rows = [row for row in flow["rows"] if isinstance(row, Mapping)]
+        matching = [row for row in rows if str(row.get("hotelId") or "").strip().lower() == page_hotel_id]
+        others = [row for row in rows if row not in matching]
+        if len(matching) == 1 and len(others) == 1:
+            hotel_row, comp_row = matching[0], others[0]
+        elif baseline_row_order_confirmed and len(rows) == 2:
+            # Some eBooking shells expose a page hotel identifier from a
+            # different namespace. The controlled replay gate has already
+            # required the complete ordered projection to equal the manually
+            # verified same-hotel discovery baseline, so its reviewed row
+            # order is admissible only in that exact case.
+            hotel_row, comp_row = rows
+
+    def display_ratio(row: Any, numerator: str, denominator: str) -> Optional[float]:
+        if not isinstance(row, Mapping):
+            return None
+        value = _ratio(row.get(numerator), row.get(denominator))
+        # The old collector parses the two-decimal percentage displayed by the
+        # page and stores it as a decimal. Match that presentation precision.
+        return None if value is None else round(value, 4)
+
+    roas_7d = None
+    summary_steps = [
+        item for item in pyramid_steps
+        if isinstance(item, Mapping) and item.get("variant") == "summary"
+    ]
+    if len(summary_steps) == 1 and isinstance(summary_steps[0].get("records"), list):
+        records = summary_steps[0]["records"]
+        if len(records) == 1 and isinstance(records[0], Mapping):
+            roas_7d = _number(records[0].get("roas"))
+
+    violation_status = None
+    if isinstance(violation, Mapping) and violation.get("totalRecords") == 0 and violation.get("recordsEmpty") is True:
+        violation_status = "无违约"
+
+    operating = {
+        "operating_reminder": operating_reminder,
+        "departed_room_nights": departed_room_nights,
+        "room_night_rank": room_night_rank,
+        "review_score": scores.get("ctripRatingall") if isinstance(scores, Mapping) else None,
+        "psi_score": scores.get("serviceScore") if isinstance(scores, Mapping) else None,
+        "hotel_list_exposure": hotel_row.get("listExposure") if isinstance(hotel_row, Mapping) else None,
+        "comp_list_exposure": comp_row.get("listExposure") if isinstance(comp_row, Mapping) else None,
+        "hotel_exposure_conversion": display_ratio(hotel_row, "detailExposure", "listExposure"),
+        "comp_exposure_conversion": display_ratio(comp_row, "detailExposure", "listExposure"),
+        "hotel_order_conversion": display_ratio(hotel_row, "orderFillingNum", "detailExposure"),
+        "comp_order_conversion": display_ratio(comp_row, "orderFillingNum", "detailExposure"),
+    }
+    failed_modules = []
+    if any(value is None for value in operating.values()):
+        failed_modules.append(Module.OPERATING_REPORT.value)
+    if roas_7d is None:
+        failed_modules.append(Module.PYRAMID.value)
+    if violation_status is None:
+        failed_modules.append(Module.VIOLATION.value)
+    return {
+        "platform": "ctrip",
+        "hotel": {
+            "hotel_id": str(hotel.get("hotel_id") or "")[:200],
+            "hotel_name": str(hotel.get("hotel_name") or "")[:200],
+        },
+        "collected_at": collected_at,
+        "operating_report": operating,
+        "pyramid": {"roas_7d": roas_7d},
+        "violation": {"status": violation_status},
+        "collector": {
+            "mode": "silent_replay_comparison",
+            "failed_modules": failed_modules,
+            "warnings": [],
+        },
+    }
 
 
 def _page_kind_ok(test_id: str, url: str) -> bool:
@@ -707,6 +864,8 @@ async def run_target_replay(
     page_index: int = 0,
     manual_refresh_confirmed: bool = False,
     confirm_capture_set_current_hotel: bool = False,
+    as_of_date: Optional[str] = None,
+    _comparison_snapshot_sink: Optional[list[Mapping[str, Any]]] = None,
 ) -> Mapping[str, Any]:
     """Run one B/C/D stage without navigating, focusing, clicking, or typing."""
 
@@ -734,14 +893,15 @@ async def run_target_replay(
         identity_hash = hotel_fingerprint(page_hotel)
         if not identity_hash:
             raise RuntimeError("Current hotel identity is unavailable.")
-        compiled = compile_target_replays(api_map, capture_records)
+        capture_compiled = compile_target_replays(api_map, capture_records)
         binding_path = Path(capture_root) / _CAPTURE_BINDING_FILE
         if binding_path.exists() or not confirm_capture_set_current_hotel:
             ensure_capture_set_binding(
                 capture_root,
-                compiled,
+                capture_compiled,
                 current_hotel_fingerprint=identity_hash,
             )
+        compiled = retarget_replay_dates(capture_compiled, as_of_date) if as_of_date else capture_compiled
 
         before = await _runtime_page_snapshot(page)
         exact_before = str(before.get("href") or "")
@@ -750,6 +910,7 @@ async def run_target_replay(
         page_objects_before = tuple(id(item) for item in context.pages)
 
         endpoint_reports = []
+        endpoint_projections: dict[str, list[Any]] = {}
         runtime_flow_hotel_ids: set[str] = set()
         for audit in ENDPOINT_AUDITS:
             steps = compiled[audit.endpoint_id]
@@ -760,9 +921,14 @@ async def run_target_replay(
                 outcomes.append(outcome)
                 schema_match = _schema_matches(outcome.data, _endpoint_schema(mapped, audit.path))
                 projection = _business_projection(audit.endpoint_id, outcome.data, step.variant)
+                endpoint_projections.setdefault(audit.endpoint_id, []).append(projection)
                 baseline_projection = _business_projection(audit.endpoint_id, step.baseline_response, step.variant)
                 data_valid = projection is not None
-                baseline_match = data_valid and baseline_projection is not None and projection == baseline_projection
+                baseline_match = (
+                    None
+                    if as_of_date
+                    else data_valid and baseline_projection is not None and projection == baseline_projection
+                )
                 records_complete = _records_complete(audit.endpoint_id, outcome.data, step.template)
                 response_ids = extract_hotel_ids(outcome.data)
                 if audit.endpoint_id == "operating_flow":
@@ -776,6 +942,12 @@ async def run_target_replay(
                     (page_id and page_id in response_ids)
                     or (baseline_ids and response_ids == baseline_ids)
                 )
+                response_row_order_match = None
+                if audit.endpoint_id == "operating_flow":
+                    response_row_order_match = bool(
+                        len(_hotel_id_sequence(outcome.data)) == 2
+                        and _hotel_id_sequence(outcome.data) == _hotel_id_sequence(step.baseline_response)
+                    )
                 step_checks.append({
                     "variant": step.variant,
                     "http_status": outcome.http_status,
@@ -786,6 +958,7 @@ async def run_target_replay(
                     "discovery_baseline_match": baseline_match,
                     "records_complete": records_complete,
                     "response_hotel_match": response_hotel_match,
+                    "response_row_order_match": response_row_order_match,
                     "redirected": outcome.redirected,
                     "login_expired": outcome.status == ResultStatus.LOGIN_EXPIRED,
                     "template_sha256": step.template_sha256,
@@ -807,9 +980,10 @@ async def run_target_replay(
                 and check["business_code_ok"]
                 and check["response_schema_match"]
                 and check["target_data_valid"]
-                and check["discovery_baseline_match"]
+                and check["discovery_baseline_match"] is not False
                 and check["records_complete"] is not False
                 and check["response_hotel_match"] is not False
+                and check["response_row_order_match"] is not False
                 and not check["redirected"]
                 and not check["login_expired"]
                 for check in step_checks
@@ -853,18 +1027,35 @@ async def run_target_replay(
         if replay_pass:
             ensure_capture_set_binding(
                 capture_root,
-                compiled,
+                capture_compiled,
                 current_hotel_fingerprint=identity_hash,
                 runtime_flow_hotel_ids=runtime_flow_hotel_ids,
                 allow_create=confirm_capture_set_current_hotel,
             )
         overall_pass = replay_pass and binding_path.exists()
+        tested_at = _now_iso()
+        if overall_pass and _comparison_snapshot_sink is not None:
+            flow_reports = [item for item in endpoint_reports if item["endpoint_id"] == "operating_flow"]
+            flow_row_order_confirmed = bool(
+                len(flow_reports) == 1
+                and all(step.get("response_row_order_match") is True for step in flow_reports[0]["steps"])
+            )
+            snapshot = build_silent_comparison_snapshot(
+                endpoint_projections,
+                hotel=page_hotel,
+                collected_at=tested_at,
+                baseline_row_order_confirmed=flow_row_order_confirmed,
+            )
+            if snapshot["collector"]["failed_modules"]:
+                raise RuntimeError("Silent comparison snapshot is missing required business fields.")
+            _comparison_snapshot_sink.append(snapshot)
         report = {
             "test_id": test_id,
             "result": "PASS" if overall_pass else "FAIL",
-            "tested_at": _now_iso(),
+            "tested_at": tested_at,
             "page_kind": "homepage" if test_id == "B" else "ordinary_order_page",
             "manual_refresh_confirmed": manual_refresh_confirmed if test_id == "D" else None,
+            "requested_data_date": as_of_date,
             "page_url_before": sanitize_url(exact_before),
             "page_url_after": sanitize_url(str(after.get("href") or "")),
             "page_url_unchanged": exact_before == str(after.get("href") or ""),
@@ -881,6 +1072,7 @@ async def run_target_replay(
                 "Only exact reviewed query POST endpoints were replayed with browser-managed same-origin credentials.",
                 "No navigation, reload, focus, click, typing, new target, form interaction, or credential export is performed.",
                 "Business values and request payloads are compared in memory and omitted from this report.",
+                "When requested_data_date is set, only approved date fields are retargeted and value equality is measured against the current control rather than the older discovery values.",
                 "Read-only approval is based on endpoint semantics and observed query behavior; this run does not independently prove absence of server-side mutation.",
             ],
         }

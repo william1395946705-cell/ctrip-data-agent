@@ -16,8 +16,10 @@ from ctrip_silent_poc.target_replay import (
     _page_kind_ok,
     _records_complete,
     audit_discovery_map,
+    build_silent_comparison_snapshot,
     compile_target_replays,
     ensure_capture_set_binding,
+    retarget_replay_dates,
     run_target_replay,
 )
 
@@ -223,6 +225,25 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(market.omitted_dynamic_field_count, 2)
         self.assertTrue(market.template.read_only)
 
+    def test_retarget_dates_changes_only_reviewed_date_fields(self):
+        compiled = compile_target_replays(self.api_map, _capture_records())
+        changed = retarget_replay_dates(compiled, "2026-09-02")
+        market = changed["operating_market_overview"][0].template.body
+        flow = changed["operating_flow"][0].template.body
+        pyramid = changed["pyramid_7d"][0].template.body
+        self.assertEqual(market["startDate"], "2026-09-02")
+        self.assertEqual(flow["startDate"], "2026-09-02")
+        self.assertEqual(flow["endDate"], "2026-09-02")
+        self.assertEqual(pyramid["startDate"], "2026-08-27")
+        self.assertEqual(pyramid["endDate"], "2026-09-02")
+        self.assertEqual(market["platform"], compiled["operating_market_overview"][0].template.body["platform"])
+        self.assertNotEqual(
+            changed["operating_market_overview"][0].template_sha256,
+            compiled["operating_market_overview"][0].template_sha256,
+        )
+        with self.assertRaisesRegex(ValueError, "ISO calendar date"):
+            retarget_replay_dates(compiled, "09/02/2026")
+
     def test_compiler_rejects_query_and_body_shape_injection(self):
         records = _capture_records()
         flow = next(item for item in records if "queryFlowTransfor" in item["request_url"])
@@ -326,6 +347,52 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(args.manual_refresh_confirmed)
         self.assertTrue(args.confirm_capture_set_current_hotel)
 
+        live = _build_parser().parse_args([
+            "compare-live",
+            "--cdp-url", "http://127.0.0.1:9223",
+            "--runtime-dir", "/local/legacy/runtime",
+        ])
+        self.assertEqual(live.command, "compare-live")
+
+        manual = _build_parser().parse_args([
+            "compare-live",
+            "--cdp-url", "http://127.0.0.1:9223",
+            "--manual-control", "artifacts/manual.json",
+            "--test-id", "B",
+        ])
+        self.assertEqual(manual.manual_control, "artifacts/manual.json")
+        self.assertEqual(manual.test_id, "B")
+
+    def test_comparison_snapshot_uses_page_hotel_row_and_display_precision(self):
+        projections = {
+            "operating_advice": [{"good": [], "bad": [{"safe": True}]}],
+            "operating_market_overview": [{"quantity": 8, "rankOfQuantity": 2, "competitorNumber": 10}],
+            "operating_scores": [{"serviceScore": 4.8, "ctripRatingall": 4.7}],
+            "operating_flow": [{
+                "rows": _responses()["/datacenter/api/inland/marketanalysis/flowanalysis/queryFlowTransforNewV1"],
+                "derived_ratios": [],
+            }],
+            "pyramid_7d": [
+                {"variant": "summary", "records": [{"roas": 3}], "totalRecords": 1},
+                {"variant": "daily", "records": [{"roas": 3}], "totalRecords": 1},
+            ],
+            "violation_list": [{"totalRecords": 0, "recordsEmpty": True}],
+        }
+        snapshot = build_silent_comparison_snapshot(
+            projections,
+            hotel={"hotel_id": "H-1", "hotel_name": "测试酒店"},
+            collected_at="2026-08-29T00:00:00+00:00",
+        )
+        operating = snapshot["operating_report"]
+        self.assertEqual(operating["operating_reminder"], "经营提醒1项，需点开查看")
+        self.assertEqual(operating["departed_room_nights"], 8)
+        self.assertEqual(operating["room_night_rank"], "2 / 10")
+        self.assertEqual(operating["hotel_exposure_conversion"], 0.1)
+        self.assertEqual(operating["comp_order_conversion"], 0.15)
+        self.assertEqual(snapshot["pyramid"]["roas_7d"], 3.0)
+        self.assertEqual(snapshot["violation"]["status"], "无违约")
+        self.assertEqual(snapshot["collector"]["failed_modules"], [])
+
     async def test_d_requires_manual_confirmation_and_page_gate_rejects_target_modules(self):
         with self.assertRaisesRegex(ValueError, "manual refresh"):
             await run_target_replay(
@@ -379,6 +446,7 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
                 encoding="utf-8",
             )
             output = root / "test_b.json"
+            snapshots = []
             with patch.dict(sys.modules, {"playwright": package, "playwright.async_api": async_api}):
                 report = await run_target_replay(
                     cdp_url="http://127.0.0.1:9223",
@@ -387,6 +455,7 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
                     capture_root=root,
                     output_path=output,
                     confirm_capture_set_current_hotel=True,
+                    _comparison_snapshot_sink=snapshots,
                 )
 
             self.assertEqual(report["result"], "PASS")
@@ -399,6 +468,8 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(report["server_side_mutation_check"], "NOT_MEASURED")
             self.assertEqual(page.forbidden_calls, [])
             self.assertEqual(driver.stop_count, 1)
+            self.assertEqual(len(snapshots), 1)
+            self.assertEqual(snapshots[0]["operating_report"]["departed_room_nights"], 8)
             self.assertFalse(has_unredacted_sensitive_material(output.read_text(encoding="utf-8")))
 
 
