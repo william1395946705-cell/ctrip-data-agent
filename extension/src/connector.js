@@ -66,7 +66,8 @@ export function connectorMain(args = {}) {
   };
   const moduleEnabled = (module, endpoint) => Boolean(
     module && module.enabled === true &&
-    map.map_status === "verified" && map.map_kind === "verified" && ["verified", "success"].includes(module.result) &&
+    ((map.map_status === "verified" && map.map_kind === "verified" && ["verified", "success"].includes(module.result)) ||
+      (map.map_status === "controlled_test" && map.map_kind === "controlled_test" && module.result === "discovered")) &&
     module.can_call_from_any_ebooking_page === true && module.required_page_context === "any_ebooking_page" &&
     endpoint && endpoint.read_only === true &&
     endpoint.can_call_from_any_ebooking_page === true && endpoint.required_page_context === "any_ebooking_page" &&
@@ -178,6 +179,27 @@ export function connectorMain(args = {}) {
       let data = text;
       try { data = JSON.parse(text); } catch { /* plain text is retained only after redaction */ }
       const redactedData = redact(data);
+      // Known production responses must pass business and shape checks;
+      // HTTP 200 can also contain an HTML shell or an error envelope.
+      if (endpoint.id) {
+        const object = data && typeof data === "object" && !Array.isArray(data);
+        const code = object ? (data.rcode ?? data.code) : undefined;
+        if (code !== undefined && !["0", "200"].includes(String(code))) {
+          return { status: loginSemantic(text) ? "login_expired" : "request_failed", period, http_status: response.status, error: "business_code_failed" };
+        }
+        const body = object ? data.data : null;
+        const numeric = (value) => (typeof value === "number" || (typeof value === "string" && value.trim() !== "")) && Number.isFinite(Number(value));
+        let valid = false;
+        if (endpoint.id === "operating_advice") valid = Array.isArray(body?.badhotelAdviceEntityList) && Array.isArray(body?.goodhotelAdviceEntityList);
+        if (endpoint.id === "operating_market_overview") valid = [body?.quantity, body?.rankOfQuantity, body?.competitorNumber].every(numeric);
+        if (endpoint.id === "operating_scores") valid = [body?.serviceScore, body?.ctripRatingall].every(numeric);
+        if (endpoint.id === "operating_flow") valid = Array.isArray(data) && data.length === 2 && data.every(row => row && row.date === endpoint.payload?.startDate && [row.listExposure, row.detailExposure, row.orderFillingNum].every(numeric));
+        if (endpoint.id === "pyramid_7d") valid = Array.isArray(body?.records) && body.records.length === 1 && Number(body.totalRecords) === 1 && numeric(body.records[0]?.roas);
+        // Positive samples are outside this POC: return incomplete rather than
+        // promoting an untested interpretation to a successful collection.
+        if (endpoint.id === "violation_list") valid = numeric(body?.totalRecords) && Number(body.totalRecords) === 0 && (body.records === null || (Array.isArray(body.records) && body.records.length === 0));
+        if (!valid) return { status: "request_failed", period, http_status: response.status, error: "business_shape_or_completeness_failed" };
+      }
       const paths = endpoint.field_paths || endpoint.response_schema?.field_paths || {};
       const rawRoas = first(redactedData, paths.roas ?? paths.roas_value ?? paths.value);
       const explicitNoData = Boolean(
@@ -247,10 +269,10 @@ export function connectorMain(args = {}) {
     const pyramid = modules.pyramid;
     const endpoint7d = endpointFor(pyramid, "7d");
     const endpoint30d = endpointFor(pyramid, "30d");
-    // A Pyramid result is only meaningful when both windows were verified as
-    // safe, same-origin, any-page read-only calls.  Do not probe 7d when 30d
-    // is missing/unapproved: the fallback is part of the module contract.
-    const pyramidReady = moduleEnabled(pyramid, endpoint7d) && moduleEnabled(pyramid, endpoint30d);
+    // This packaged POC deliberately supports the verified 7d request without
+    // silently expanding the current task to 30d. If 7d is zero/no-data and
+    // 30d is unavailable, normalization fails closed instead of claiming no spend.
+    const pyramidReady = moduleEnabled(pyramid, endpoint7d);
     if (!pyramidReady) {
       output.modules.pyramid = { module: "pyramid", status: "unverified", periods: { "7d": unverified("pyramid", "7d"), "30d": unverified("pyramid", "30d") } };
     } else {

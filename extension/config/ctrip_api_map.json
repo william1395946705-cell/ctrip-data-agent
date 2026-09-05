@@ -1,50 +1,151 @@
 {
-  "version": 1,
-  "map_kind": "discovery",
-  "map_status": "unverified",
-  "generated_at": null,
+  "version": 2,
+  "revision": 1,
+  "distribution": "bundled",
+  "release_scope": "authorized_browser_poc",
+  "map_kind": "controlled_test",
+  "map_status": "controlled_test",
+  "generated_at": "2026-09-03T00:00:00Z",
   "modules": {
     "operating_report": {
       "module": "operating_report",
-      "request_url": null,
-      "method": null,
-      "payload_schema": null,
-      "response_schema": null,
-      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
-      "can_call_from_any_ebooking_page": null,
-      "result": "unverified",
-      "enabled": false,
-      "notes": "默认未启用。导入当前授权会话捕获并通过敏感字段校验的接口地图后才允许调用。",
-      "endpoints": []
+      "enabled": true,
+      "result": "discovered",
+      "required_page_context": "any_ebooking_page",
+      "can_call_from_any_ebooking_page": true,
+      "endpoints": [
+        {
+          "id": "operating_advice",
+          "request_url": "/datacenter/api/dataCenter/report/getHotelAdvice",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {},
+          "response_adapter": "ctrip_operating_advice_v1",
+          "read_only": true,
+          "read_only_justification": "仅查询经营提醒报告，不改变业务状态。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        },
+        {
+          "id": "operating_market_overview",
+          "request_url": "/datacenter/api/dataCenter/sale/fetchMarketOverViewV2",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {
+            "platform": 0,
+            "startDateType": 0,
+            "startDate": "1970-01-01",
+            "needRank": true
+          },
+          "date_policy": {
+            "kind": "previous_day",
+            "fields": ["startDate"]
+          },
+          "response_adapter": "ctrip_operating_market_overview_v1",
+          "read_only": true,
+          "read_only_justification": "仅查询昨日离店间夜与竞争圈排名，不改变业务状态。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        },
+        {
+          "id": "operating_scores",
+          "request_url": "/datacenter/api/dataCenter/report/getDayReportServerQuantity",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {},
+          "response_adapter": "ctrip_operating_scores_v1",
+          "read_only": true,
+          "read_only_justification": "仅查询 PSI 与酒店点评分，不改变业务状态。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        },
+        {
+          "id": "operating_flow",
+          "request_url": "/datacenter/api/inland/marketanalysis/flowanalysis/queryFlowTransforNewV1",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {
+            "platform": "ctrip",
+            "startDate": "1970-01-01",
+            "endDate": "1970-01-01"
+          },
+          "date_policy": {
+            "kind": "previous_day",
+            "fields": ["startDate", "endDate"]
+          },
+          "response_adapter": "ctrip_operating_flow_v1",
+          "flow_row_order_confirmed": true,
+          "read_only": true,
+          "read_only_justification": "仅查询昨日曝光与转化漏斗，不改变业务状态。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        }
+      ]
     },
     "pyramid": {
       "module": "pyramid",
-      "request_url": null,
-      "method": null,
-      "payload_schema": null,
-      "response_schema": null,
-      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
-      "can_call_from_any_ebooking_page": null,
-      "result": "unverified",
-      "enabled": false,
-      "notes": "默认未启用；7 天和 30 天端点需分别由真实接口地图声明。",
+      "enabled": true,
+      "result": "discovered",
+      "required_page_context": "any_ebooking_page",
+      "can_call_from_any_ebooking_page": true,
       "periods": {
-        "7d": null,
+        "7d": {
+          "id": "pyramid_7d",
+          "request_url": "/toolcenter/api/cpc/queryCampaignReportList",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {
+            "startDate": "1970-01-01",
+            "endDate": "1970-01-01",
+            "pageIdx": 1,
+            "pageSize": 10,
+            "isSummary": true,
+            "convertPeriod": 3
+          },
+          "date_policy": {
+            "kind": "previous_days_closed",
+            "days": 7
+          },
+          "field_paths": {
+            "roas": "data.records[0].roas"
+          },
+          "read_only": true,
+          "read_only_justification": "仅查询近 7 天广告投产汇总，不修改广告活动。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        },
         "30d": null
       }
     },
     "violation": {
       "module": "violation",
-      "request_url": null,
-      "method": null,
-      "payload_schema": null,
-      "response_schema": null,
-      "required_page_context": "任意已登录 eBooking 页面（待真实捕获请求验证）",
-      "can_call_from_any_ebooking_page": null,
-      "result": "unverified",
-      "enabled": false,
-      "notes": "默认未启用。",
-      "endpoints": []
+      "enabled": true,
+      "result": "discovered",
+      "required_page_context": "any_ebooking_page",
+      "can_call_from_any_ebooking_page": true,
+      "endpoints": [
+        {
+          "id": "violation_list",
+          "request_url": "/toolcenter/api/psi/queryEbkPunlishMent",
+          "method": "POST",
+          "body_format": "json",
+          "payload": {
+            "selectedCategory": [0],
+            "pageIndex": 1,
+            "pageSize": "30",
+            "selectedStatus": "-1",
+            "defectCategoryId": 0,
+            "subCategoryId": 0
+          },
+          "field_paths": {
+            "violation_count": "data.totalRecords"
+          },
+          "read_only": true,
+          "read_only_justification": "仅查询违约记录数量与列表，不改变违约状态。",
+          "required_page_context": "any_ebooking_page",
+          "can_call_from_any_ebooking_page": true
+        }
+      ]
     }
   }
 }

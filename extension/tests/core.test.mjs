@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import {
+  assertControlledTestMap,
   clampConfig,
   computeCategory,
   createCollectionResult,
@@ -9,24 +10,70 @@ import {
   getModuleEndpoints,
   isLoginExpiredResponse,
   isModuleCallable,
+  materializeApiMap,
   mergeOperatingSources,
   normalizeOperatingData,
   normalizePyramidPeriod,
   normalizeViolationData,
   sanitizeForStorage,
+  shouldReplaceBundledMap,
   validateApiMap
 } from "../src/core.js";
 
-test("默认接口地图完整但全部未验证/禁用", async () => {
+test("受控地图必须精确匹配内置审核模板，不接受自声明只读的修改", async () => {
+  const bundled = validateApiMap(JSON.parse(await readFile(new URL("../config/ctrip_api_map.json", import.meta.url))));
+  assert.doesNotThrow(() => assertControlledTestMap(structuredClone(bundled), bundled));
+  for (const mutation of [
+    endpoint => { endpoint.request_url = "/modifyInventory"; },
+    endpoint => { endpoint.payload = { change: true }; },
+    endpoint => { endpoint.headers = { "x-custom": "value" }; }
+  ]) {
+    const altered = structuredClone(bundled);
+    mutation(altered.modules.operating_report.endpoints[0]);
+    assert.throws(() => assertControlledTestMap(altered, bundled), /拒绝执行/);
+  }
+});
+
+test("升级迁移空默认地图但保留用户自定义端点", () => {
+  const bundled = { revision: 1 };
+  const old = { map_kind: "discovery", map_status: "unverified", generated_at: null, modules: Object.fromEntries(["operating_report", "pyramid", "violation"].map(name => [name, { enabled: false, result: "unverified", endpoints: [], periods: { "7d": null, "30d": null } }])) };
+  assert.equal(shouldReplaceBundledMap(old, bundled), true);
+  const custom = structuredClone(old);
+  custom.modules.operating_report.endpoints.push({ request_url: "/custom" });
+  assert.equal(shouldReplaceBundledMap(custom, bundled), false);
+  assert.equal(shouldReplaceBundledMap({ distribution: "bundled", revision: 1 }, bundled), false);
+});
+
+test("打包接口地图仅启用 6 个已审核同源只读查询", async () => {
   const map = JSON.parse(await readFile(new URL("../config/ctrip_api_map.json", import.meta.url)));
   const normalized = validateApiMap(map);
-  assert.equal(normalized.map_status, "unverified");
-  assert.equal(normalized.map_kind, "discovery");
+  assert.equal(normalized.map_status, "controlled_test");
+  assert.equal(normalized.map_kind, "controlled_test");
+  assert.equal(normalized.distribution, "bundled");
+  const endpoints = [
+    ...normalized.modules.operating_report.endpoints,
+    normalized.modules.pyramid.periods["7d"],
+    ...normalized.modules.violation.endpoints
+  ];
+  assert.equal(endpoints.length, 6);
   for (const module of Object.values(normalized.modules)) {
-    assert.equal(module.enabled, false);
-    assert.equal(module.result, "unverified");
-    assert.equal(module.can_call_from_any_ebooking_page, null);
+    assert.equal(module.enabled, true);
+    assert.equal(module.result, "discovered");
+    assert.equal(module.can_call_from_any_ebooking_page, true);
   }
+  for (const endpoint of endpoints) {
+    assert.equal(endpoint.method, "POST");
+    assert.equal(endpoint.read_only, true);
+    assert.equal(endpoint.can_call_from_any_ebooking_page, true);
+    assert.match(endpoint.request_url, /^\//);
+    assert.equal(new URL(endpoint.request_url, "https://ebooking.ctrip.com").origin, "https://ebooking.ctrip.com");
+  }
+  assert.equal(normalized.modules.pyramid.periods["30d"], null);
+  const dated = materializeApiMap(normalized, new Date(2026, 8, 3, 12));
+  assert.equal(dated.modules.operating_report.endpoints[1].payload.startDate, "2026-09-02");
+  assert.equal(dated.modules.operating_report.endpoints[3].payload.endDate, "2026-09-02");
+  assert.equal(dated.modules.pyramid.periods["7d"].payload.startDate, "2026-08-27");
+  assert.equal(dated.modules.pyramid.periods["7d"].payload.endDate, "2026-09-02");
 });
 
 test("根接口地图记录逐端点 replay PASS 但保持 discovery/禁用", async () => {
@@ -167,6 +214,40 @@ test("经营报告可合并多个接口且保持排名文本", () => {
   assert.equal(value.category, "高曝高转");
 });
 
+test("真实 4 接口适配器生成完整经营指标且按已核对行序计算", () => {
+  const module = {
+    endpoints: [
+      { response_adapter: "ctrip_operating_advice_v1" },
+      { response_adapter: "ctrip_operating_market_overview_v1" },
+      { response_adapter: "ctrip_operating_scores_v1" },
+      { response_adapter: "ctrip_operating_flow_v1", flow_row_order_confirmed: true }
+    ]
+  };
+  const value = mergeOperatingSources([
+    { data: { data: { badhotelAdviceEntityList: [{}, {}, {}] } }, endpoint: module.endpoints[0] },
+    { data: { data: { quantity: 19, rankOfQuantity: 7, competitorNumber: 19 } }, endpoint: module.endpoints[1] },
+    { data: { data: { serviceScore: 5.43, ctripRatingall: 4.56 } }, endpoint: module.endpoints[2] },
+    { data: [
+      { hotelId: "hotel", listExposure: 312, detailExposure: 58, orderFillingNum: 5 },
+      { hotelId: "competition", listExposure: 481, detailExposure: 74, orderFillingNum: 8 }
+    ], endpoint: module.endpoints[3] }
+  ], module, { hotel: {} });
+  assert.deepEqual(value, {
+    operating_reminder: "经营提醒3项，需点开查看",
+    departed_room_nights: 19,
+    room_night_rank: "7 / 19",
+    review_score: 4.56,
+    psi_score: 5.43,
+    hotel_list_exposure: 312,
+    comp_list_exposure: 481,
+    hotel_exposure_conversion: 0.1859,
+    comp_exposure_conversion: 0.1538,
+    hotel_order_conversion: 0.0862,
+    comp_order_conversion: 0.1081,
+    category: "低曝低转"
+  });
+});
+
 test("金字塔仅在 7 天明确 0/暂无时使用 30 天，失败不判未投流", () => {
   const zero = derivePyramidOutput({ status: "success", roas: 0, explicit_no_data: false }, { status: "success", roas: 2, explicit_no_data: false });
   assert.deepEqual(zero.output, { roas_7d: 0, roas_30d: 2, no_investment: false });
@@ -194,7 +275,7 @@ test("统一结果 schema 和认证失效状态", () => {
   assert.equal(result.collector.mode, "silent");
   assert.equal(result.collector.current_page_unchanged, true);
   assert.deepEqual(Object.keys(result.operating_report), [
-    "operating_reminder", "room_night_rank", "review_score", "psi_score", "hotel_list_exposure", "comp_list_exposure",
+    "operating_reminder", "departed_room_nights", "room_night_rank", "review_score", "psi_score", "hotel_list_exposure", "comp_list_exposure",
     "hotel_exposure_conversion", "comp_exposure_conversion", "hotel_order_conversion", "comp_order_conversion", "category"
   ]);
   assert.equal(isLoginExpiredResponse(401), true);

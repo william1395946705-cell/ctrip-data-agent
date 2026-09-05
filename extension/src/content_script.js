@@ -89,6 +89,14 @@
     });
   };
 
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === "CTRIP_READ_PAGE_STATE") {
+      const state = pageState();
+      state.stable = state.initialized;
+      sendResponse(state);
+    }
+  });
+
   const scheduleStableReport = () => {
     clearTimeout(quietTimer);
     if (document.readyState !== "complete") return;
