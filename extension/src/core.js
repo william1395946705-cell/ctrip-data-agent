@@ -174,6 +174,20 @@ export function shouldReplaceBundledMap(stored, bundled) {
   });
 }
 
+export function normalizeHotelIdentity(value) {
+  return String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function samePageHotel(before, after) {
+  const beforeId = normalizeHotelIdentity(before?.hotel_id);
+  const afterId = normalizeHotelIdentity(after?.hotel_id);
+  const beforeName = normalizeHotelIdentity(before?.hotel_name);
+  const afterName = normalizeHotelIdentity(after?.hotel_name);
+  if (beforeId && afterId) return beforeId === afterId && (!beforeName || !afterName || beforeName === afterName);
+  if (beforeId || afterId) return false;
+  return Boolean(beforeName && afterName && beforeName === afterName);
+}
+
 export function assertControlledTestMap(map, bundled) {
   if (map.map_kind !== "controlled_test") return;
   const canonical = value => {
@@ -325,6 +339,25 @@ function normalizeKnownOperatingResponse(data, endpoint, context) {
     return output;
   }
   throw new Error(`未知经营报告 response_adapter: ${adapter}`);
+}
+
+export function getFlowHotelIdentity(sources, module = {}, pageHotel = {}) {
+  const endpoints = getModuleEndpoints(module);
+  for (const [index, source] of (Array.isArray(sources) ? sources : []).entries()) {
+    const endpoint = source?.endpoint || endpoints[index] || {};
+    if (endpoint.response_adapter !== "ctrip_operating_flow_v1" || !Array.isArray(source?.data) || source.data.length !== 2) continue;
+    const ids = source.data.map((row) => String(row?.hotelId || "").trim());
+    const normalized = ids.map(normalizeHotelIdentity);
+    if (normalized.some((id) => !id) || new Set(normalized).size !== 2) return { status: "invalid_flow_identity" };
+    const pageId = normalizeHotelIdentity(pageHotel?.hotel_id);
+    if (pageId) {
+      if (normalized[0] !== pageId) return { status: "page_flow_mismatch" };
+      return { status: "page_id_bound", hotel_id: ids[0] };
+    }
+    if (endpoint.flow_row_order_confirmed === true) return { status: "observed_order_bound", hotel_id: ids[0] };
+    return { status: "unbound" };
+  }
+  return { status: "flow_identity_unavailable" };
 }
 
 export function normalizeOperatingData(data, module = {}, context = {}) {

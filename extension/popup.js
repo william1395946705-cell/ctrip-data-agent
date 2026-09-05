@@ -39,6 +39,8 @@ function render(state) {
   $("last-status").textContent = failed.length ? `${failed.length === 3 ? "全部模块失败" : "部分失败"}：${failed.join("、")}` : "采集成功";
   $("warnings").textContent = (result.collector?.warnings || []).join("；");
   $("last-time").textContent = formatTime(result.collected_at);
+  $("result-hotel-id").textContent = text(result.hotel?.hotel_id);
+  $("identity-source").textContent = text(result.collector?.hotel_identity_source);
   $("url-unchanged").textContent = result.collector?.current_page_unchanged === true ? "是" : "否";
   $("roas").textContent = text(result.pyramid?.roas_7d);
   $("violation").textContent = text(result.violation?.status);

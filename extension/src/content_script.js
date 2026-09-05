@@ -35,8 +35,8 @@
 
   const pageState = () => {
     const hotelId = firstAttribute(
-      ["[data-hotel-id]", "[data-hotelid]", "[data-property-id]", "meta[name='hotel-id']", "meta[name='property-id']"],
-      ["data-hotel-id", "data-hotelid", "data-property-id", "content"]
+      ["[data-hotel-id]", "[data-hotelid]", "[data-hotel-code]", "[data-property-id]", "meta[name='hotel-id']", "meta[name='hotel-code']", "meta[name='property-id']"],
+      ["data-hotel-id", "data-hotelid", "data-hotel-code", "data-property-id", "content"]
     );
     const hotelName = firstAttribute(
       ["[data-hotel-name]", "[data-property-name]", "meta[name='hotel-name']", "meta[name='property-name']"],
