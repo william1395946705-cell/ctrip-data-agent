@@ -188,6 +188,10 @@ export function samePageHotel(before, after) {
   return Boolean(beforeName && afterName && beforeName === afterName);
 }
 
+export function isHotelIdentityVerified(value) {
+  return value === "page_id_bound";
+}
+
 export function assertControlledTestMap(map, bundled) {
   if (map.map_kind !== "controlled_test") return;
   const canonical = value => {

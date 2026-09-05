@@ -8,6 +8,7 @@ import {
   createCollectionResult,
   derivePyramidOutput,
   getFlowHotelIdentity,
+  isHotelIdentityVerified,
   getModuleEndpoints,
   isLoginExpiredResponse,
   isModuleCallable,
@@ -265,6 +266,11 @@ test("页面酒店身份需要在采集前后保持相同", () => {
   assert.equal(samePageHotel({ hotel_name: "测试酒店" }, { hotel_name: "另一酒店" }), false);
   assert.equal(samePageHotel({ hotel_id: "A", hotel_name: "测试酒店" }, { hotel_id: "B", hotel_name: "测试酒店" }), false);
   assert.equal(samePageHotel({ hotel_id: "A", hotel_name: "测试酒店" }, { hotel_name: "测试酒店" }), false);
+});
+
+test("只有页面可见 ID 绑定才算已验证身份", () => {
+  assert.equal(isHotelIdentityVerified("page_id_bound"), true);
+  assert.equal(isHotelIdentityVerified("manual_check_required"), false);
 });
 
 test("金字塔仅在 7 天明确 0/暂无时使用 30 天，失败不判未投流", () => {
