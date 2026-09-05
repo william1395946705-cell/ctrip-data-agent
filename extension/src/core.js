@@ -119,9 +119,9 @@ export function validateApiMap(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("接口地图必须是 JSON 对象");
   assertNoSensitiveFields(input);
   const mapStatus = input.map_status || input.status || "unverified";
-  if (!["verified", "discovered", "unverified", "blocked"].includes(mapStatus)) throw new Error("map_status 必须是 verified/discovered/unverified/blocked");
+  if (!["controlled_test", "verified", "discovered", "unverified", "blocked"].includes(mapStatus)) throw new Error("无效 map_status");
   const mapKind = input.map_kind || (mapStatus === "verified" ? "verified" : "discovery");
-  if (!["verified", "discovery"].includes(mapKind)) throw new Error("map_kind 必须是 verified/discovery");
+  if (!["controlled_test", "verified", "discovery"].includes(mapKind)) throw new Error("无效 map_kind");
   const modules = modulesToObject(input.modules);
   const normalizedModules = {};
   for (const name of MODULE_NAMES) {
@@ -150,6 +150,9 @@ export function validateApiMap(input) {
   }
   return {
     version: input.version ?? 1,
+    revision: input.revision ?? 0,
+    distribution: input.distribution ?? null,
+    release_scope: input.release_scope ?? null,
     map_kind: mapKind,
     map_status: mapStatus,
     generated_at: input.generated_at ?? null,
@@ -157,10 +160,37 @@ export function validateApiMap(input) {
   };
 }
 
+export function shouldReplaceBundledMap(stored, bundled) {
+  if (!stored) return true;
+  if (stored.distribution === "bundled") return Number(stored.revision || 0) < Number(bundled.revision || 0);
+  // Only migrate the empty shipped v1 skeleton, never a user-authored map.
+  if (stored.map_kind !== "discovery" || stored.map_status !== "unverified" || stored.generated_at != null) return false;
+  return MODULE_NAMES.every(name => {
+    const module = stored.modules?.[name];
+    if (!module || module.enabled !== false || module.result !== "unverified" || module.request_url || module.endpoint) return false;
+    return name === "pyramid"
+      ? Object.values(module.periods || {}).every(value => value == null)
+      : Array.isArray(module.endpoints) && module.endpoints.length === 0;
+  });
+}
+
+export function assertControlledTestMap(map, bundled) {
+  if (map.map_kind !== "controlled_test") return;
+  const canonical = value => {
+    if (Array.isArray(value)) return value.map(canonical);
+    if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+    return value;
+  };
+  if (JSON.stringify(canonical(map)) !== JSON.stringify(canonical(bundled))) {
+    throw new Error("受控测试地图与内置审核模板不一致，拒绝执行");
+  }
+}
+
 export function isModuleCallable(module, mapStatus = "unverified", period = null, mapKind = "verified") {
   const moduleContextApproved = module?.can_call_from_any_ebooking_page === true && module?.required_page_context === "any_ebooking_page";
   const endpointContextApproved = (endpoint) => endpoint?.can_call_from_any_ebooking_page === true && endpoint?.required_page_context === "any_ebooking_page";
-  if (!module || module.enabled !== true || mapStatus !== "verified" || mapKind !== "verified" || !["verified", "success"].includes(module.result) || !moduleContextApproved) return false;
+  const approved = (mapStatus === "verified" && mapKind === "verified" && ["verified", "success"].includes(module?.result)) || (mapStatus === "controlled_test" && mapKind === "controlled_test" && module?.result === "discovered");
+  if (!module || module.enabled !== true || !approved || !moduleContextApproved) return false;
   const endpoint = period && module.periods ? module.periods[period] : module.endpoint;
   if (period) return Boolean(endpoint && endpoint.read_only === true && endpointContextApproved(endpoint) && typeof endpoint.request_url === "string");
   const declaredEndpoints = Array.isArray(module.endpoints) ? module.endpoints : (endpoint ? [endpoint] : []);
@@ -232,8 +262,9 @@ export function computeCategory(hotelExposure, compExposure, hotelOrderConversio
   return "低曝低转";
 }
 
-const OPERATING_FIELDS = [
+export const OPERATING_FIELDS = [
   "operating_reminder",
+  "departed_room_nights",
   "room_night_rank",
   "review_score",
   "psi_score",
@@ -245,7 +276,68 @@ const OPERATING_FIELDS = [
   "comp_order_conversion"
 ];
 
-export function normalizeOperatingData(data, module = {}) {
+function roundRatio(numerator, denominator) {
+  const top = toNumber(numerator);
+  const bottom = toNumber(denominator);
+  if (top === null || bottom === null || bottom === 0) return top === 0 && bottom === 0 ? 0 : null;
+  return Math.round((top / bottom) * 10000) / 10000;
+}
+
+function normalizeKnownOperatingResponse(data, endpoint, context) {
+  const adapter = endpoint?.response_adapter;
+  if (!adapter) return null;
+  const output = Object.fromEntries(OPERATING_FIELDS.map((field) => [field, null]));
+  if (adapter === "ctrip_operating_advice_v1") {
+    const bad = getAtPath(data, "data.badhotelAdviceEntityList");
+    if (!Array.isArray(bad)) return output;
+    output.operating_reminder = bad.length === 0 ? "无" : `经营提醒${bad.length}项，需点开查看`;
+    return output;
+  }
+  if (adapter === "ctrip_operating_market_overview_v1") {
+    output.departed_room_nights = toNumber(getAtPath(data, "data.quantity"));
+    const rank = toNumber(getAtPath(data, "data.rankOfQuantity"));
+    const total = toNumber(getAtPath(data, "data.competitorNumber"));
+    if (rank !== null && total !== null) output.room_night_rank = `${Math.trunc(rank)} / ${Math.trunc(total)}`;
+    return output;
+  }
+  if (adapter === "ctrip_operating_scores_v1") {
+    output.review_score = toNumber(getAtPath(data, "data.ctripRatingall"));
+    output.psi_score = toNumber(getAtPath(data, "data.serviceScore"));
+    return output;
+  }
+  if (adapter === "ctrip_operating_flow_v1") {
+    if (!Array.isArray(data) || data.length !== 2) return output;
+    const hotelId = String(context?.hotel?.hotel_id || "").trim().toLowerCase();
+    let hotelRow = hotelId
+      ? data.find((row) => String(row?.hotelId || "").trim().toLowerCase() === hotelId)
+      : null;
+    let compRow = hotelRow ? data.find((row) => row !== hotelRow) : null;
+    if ((!hotelRow || !compRow) && endpoint.flow_row_order_confirmed === true) {
+      [hotelRow, compRow] = data;
+    }
+    if (!hotelRow || !compRow) return output;
+    output.hotel_list_exposure = toNumber(hotelRow.listExposure);
+    output.comp_list_exposure = toNumber(compRow.listExposure);
+    output.hotel_exposure_conversion = roundRatio(hotelRow.detailExposure, hotelRow.listExposure);
+    output.comp_exposure_conversion = roundRatio(compRow.detailExposure, compRow.listExposure);
+    output.hotel_order_conversion = roundRatio(hotelRow.orderFillingNum, hotelRow.detailExposure);
+    output.comp_order_conversion = roundRatio(compRow.orderFillingNum, compRow.detailExposure);
+    return output;
+  }
+  throw new Error(`未知经营报告 response_adapter: ${adapter}`);
+}
+
+export function normalizeOperatingData(data, module = {}, context = {}) {
+  const adapted = normalizeKnownOperatingResponse(data, module, context);
+  if (adapted) {
+    adapted.category = computeCategory(
+      adapted.hotel_list_exposure,
+      adapted.comp_list_exposure,
+      adapted.hotel_order_conversion,
+      adapted.comp_order_conversion
+    );
+    return adapted;
+  }
   const paths = module.field_paths || module.response_schema?.field_paths || {};
   const output = Object.fromEntries(OPERATING_FIELDS.map((field) => [field, null]));
   for (const field of OPERATING_FIELDS) {
@@ -262,13 +354,13 @@ export function normalizeOperatingData(data, module = {}) {
   return output;
 }
 
-export function mergeOperatingSources(sources, module = {}) {
+export function mergeOperatingSources(sources, module = {}, context = {}) {
   const output = Object.fromEntries(OPERATING_FIELDS.map((field) => [field, null]));
   const endpoints = getModuleEndpoints(module);
   for (const [index, source] of (Array.isArray(sources) ? sources : []).entries()) {
     if (!source || source.data === undefined) continue;
     const endpoint = source.endpoint || endpoints[index] || module;
-    const partial = normalizeOperatingData(source.data, endpoint);
+    const partial = normalizeOperatingData(source.data, endpoint, context);
     for (const field of OPERATING_FIELDS) {
       if (partial[field] !== null && partial[field] !== undefined) output[field] = partial[field];
     }
@@ -356,6 +448,7 @@ export function createCollectionResult(hotel = {}, collectedAt = new Date().toIS
     collected_at: collectedAt,
     operating_report: {
       operating_reminder: null,
+      departed_room_nights: null,
       room_night_rank: null,
       review_score: null,
       psi_score: null,
@@ -382,6 +475,69 @@ export function createCollectionResult(hotel = {}, collectedAt = new Date().toIS
       warnings: []
     }
   };
+}
+
+function localIsoDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new Error("无效的日期基准");
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function shiftedLocalDate(value, days) {
+  const date = new Date(value);
+  date.setHours(12, 0, 0, 0);
+  date.setDate(date.getDate() + days);
+  return localIsoDate(date);
+}
+
+function materializeEndpointDates(endpoint, now) {
+  if (!endpoint || typeof endpoint !== "object" || !endpoint.date_policy) return endpoint;
+  const output = { ...endpoint, payload: { ...(endpoint.payload || {}) } };
+  const policy = endpoint.date_policy;
+  if (!policy || typeof policy !== "object") throw new Error("date_policy 必须是对象");
+  const yesterday = shiftedLocalDate(now, -1);
+  if (policy.kind === "previous_day") {
+    const fields = Array.isArray(policy.fields) ? policy.fields : [];
+    if (!fields.length || fields.some((field) => !["startDate", "endDate"].includes(field))) {
+      throw new Error("previous_day date_policy 字段不合法");
+    }
+    for (const field of fields) output.payload[field] = yesterday;
+  } else if (policy.kind === "previous_days_closed") {
+    const days = Number(policy.days);
+    if (!Number.isInteger(days) || days < 1 || days > 31) throw new Error("previous_days_closed 天数不合法");
+    output.payload.startDate = shiftedLocalDate(now, -days);
+    output.payload.endDate = yesterday;
+  } else {
+    throw new Error(`未知 date_policy: ${policy.kind}`);
+  }
+  return output;
+}
+
+export function materializeApiMap(input, now = new Date()) {
+  const map = validateApiMap(input);
+  const modules = { ...map.modules };
+  for (const name of MODULE_NAMES) {
+    const module = modules[name];
+    if (!module) continue;
+    if (name === "pyramid") {
+      modules[name] = {
+        ...module,
+        periods: {
+          "7d": materializeEndpointDates(module.periods?.["7d"], now),
+          "30d": materializeEndpointDates(module.periods?.["30d"], now)
+        }
+      };
+    } else {
+      modules[name] = {
+        ...module,
+        endpoints: (module.endpoints || []).map((endpoint) => materializeEndpointDates(endpoint, now))
+      };
+    }
+  }
+  return { ...map, modules };
 }
 
 export function isLoginExpiredResponse(status, responseUrl = "", redirected = false, responseText = "") {

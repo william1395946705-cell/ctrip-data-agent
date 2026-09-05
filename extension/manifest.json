@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ctrip Silent Collector POC",
-  "version": "0.1.0",
-  "description": "在不切换当前页面的前提下验证携程 eBooking 指标采集。",
+  "name": "Ctrip Silent Collector",
+  "version": "0.2.1",
+  "description": "在当前已登录 eBooking 页面中执行本地只读无感采集。",
   "permissions": ["scripting", "storage"],
   "host_permissions": ["https://ebooking.ctrip.com/*"],
   "background": {
@@ -11,7 +11,7 @@
   },
   "action": {
     "default_title": "Ctrip Silent Collector",
-    "default_popup": "debug.html"
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

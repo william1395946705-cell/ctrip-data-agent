@@ -388,6 +388,66 @@ async def _run_live_comparison(args: argparse.Namespace) -> int:
     return 0 if comparison["result"] == "PASS" else 1
 
 
+async def _run_stability_test(args: argparse.Namespace) -> int:
+    """Repeat the six reviewed queries on one operator-selected page."""
+
+    output_dir = Path(args.output_dir) / args.page_kind
+    reports = []
+    test_id = "D" if args.manual_refresh_confirmed else ("B" if args.page_kind == "home" else "C")
+    for round_index in range(1, args.rounds + 1):
+        report = await run_target_replay(
+            cdp_url=args.cdp_url,
+            test_id=test_id,
+            api_map_path=args.api_map,
+            capture_root=args.capture_root,
+            output_path=output_dir / f"round_{round_index}.json",
+            page_index=args.page_index,
+            manual_refresh_confirmed=args.manual_refresh_confirmed,
+            as_of_date=args.as_of_date,
+            expected_page_kind=args.page_kind,
+        )
+        reports.append(report)
+
+    identity_digests = {item.get("hotel_identity_digest") for item in reports}
+    urls = {item.get("page_url_before") for item in reports} | {item.get("page_url_after") for item in reports}
+    passed = bool(
+        len(reports) == args.rounds
+        and all(item.get("result") == "PASS" for item in reports)
+        and all(item.get("endpoint_count") == 6 for item in reports)
+        and all(item.get("page_url_unchanged") is True for item in reports)
+        and all(item.get("focus_state_unchanged") is True for item in reports)
+        and all(item.get("new_target_opened") is False for item in reports)
+        and all(item.get("login_state_valid_after") is True for item in reports)
+        and all(item.get("hotel_identity_unchanged") is True for item in reports)
+        and len(identity_digests) == 1
+        and None not in identity_digests
+        and len(urls) == 1
+        and None not in urls
+    )
+    summary = {
+        "result": "PASS" if passed else "FAIL",
+        "page_kind": args.page_kind,
+        "rounds_requested": args.rounds,
+        "rounds_passed": sum(item.get("result") == "PASS" for item in reports),
+        "endpoint_count_each_round": [item.get("endpoint_count") for item in reports],
+        "page_url_unchanged_all_rounds": all(item.get("page_url_unchanged") is True for item in reports),
+        "focus_state_unchanged_all_rounds": all(item.get("focus_state_unchanged") is True for item in reports),
+        "new_target_opened": any(item.get("new_target_opened") is True for item in reports),
+        "login_valid_all_rounds": all(item.get("login_state_valid_after") is True for item in reports),
+        "hotel_identity_stable": len(identity_digests) == 1 and None not in identity_digests,
+        "manual_refresh_confirmed": args.manual_refresh_confirmed,
+        "requested_data_date": args.as_of_date,
+        "round_reports": [f"round_{index}.json" for index in range(1, len(reports) + 1)],
+        "notes": [
+            "The operator selected and, when applicable, manually refreshed the page; this command never navigates, reloads, focuses, clicks, or types.",
+            "Business values and authentication material are omitted from this stability summary.",
+        ],
+    }
+    _write_json(output_dir / "summary.json", summary)
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0 if passed else 1
+
+
 async def _run_session(args: argparse.Namespace) -> int:
     try:
         from playwright.async_api import async_playwright
@@ -627,6 +687,24 @@ def _build_parser() -> argparse.ArgumentParser:
     live_compare.add_argument("--capture-root", default="artifacts/target-discovery")
     live_compare.add_argument("--output-dir", default="artifacts/legacy-vs-silent")
     live_compare.add_argument("--speed", choices=("fast", "stable"), default="stable")
+
+    stability = subparsers.add_parser(
+        "stability-test",
+        help="repeat the six reviewed queries on one manually selected ordinary eBooking page",
+    )
+    stability.add_argument("--cdp-url", required=True, help="existing authorized local Chrome CDP endpoint")
+    stability.add_argument("--page-kind", required=True, choices=("home", "order", "inventory", "price"))
+    stability.add_argument("--rounds", type=int, default=1, choices=range(1, 4), metavar="{1,2,3}")
+    stability.add_argument("--page-index", type=int, default=0)
+    stability.add_argument("--api-map", default="ctrip_api_map.json")
+    stability.add_argument("--capture-root", default="artifacts/target-discovery")
+    stability.add_argument("--output-dir", default="artifacts/package-browser-test")
+    stability.add_argument("--as-of-date", help="ISO report date; defaults to the reviewed captured date")
+    stability.add_argument(
+        "--manual-refresh-confirmed",
+        action="store_true",
+        help="operator confirms this ordinary page was manually refreshed before the run",
+    )
     return parser
 
 
@@ -685,6 +763,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if report.get("result") == "PASS" else 1
     if args.command == "compare-live":
         return asyncio.run(_run_live_comparison(args))
+    if args.command == "stability-test":
+        return asyncio.run(_run_stability_test(args))
     return 2
 
 

@@ -81,6 +81,21 @@ function installPage() {
   };
 }
 
+test("真实端点拒绝 HTTP 200 HTML、错误业务码和不完整字段", async () => {
+  const restore = installPage();
+  const previous = globalThis.fetch;
+  try {
+    for (const body of ["<html>loading</html>", { rcode: 500, data: {} }, { rcode: 0, data: { quantity: 1 } }]) {
+      globalThis.fetch = async () => response(body);
+      const result = await connectorMain({ map: operatingMap(endpoint("/datacenter/api/dataCenter/sale/fetchMarketOverViewV2", { id: "operating_market_overview" })), expectedUrl: PAGE_URL });
+      assert.equal(result.modules.operating_report.responses[0].status, "request_failed");
+    }
+    globalThis.fetch = async () => response({ rcode: 0, data: { quantity: 1, rankOfQuantity: 2, competitorNumber: 3 } });
+    const result = await connectorMain({ map: operatingMap(endpoint("/datacenter/api/dataCenter/sale/fetchMarketOverViewV2", { id: "operating_market_overview" })), expectedUrl: PAGE_URL });
+    assert.equal(result.modules.operating_report.responses[0].status, "success");
+  } finally { globalThis.fetch = previous; restore(); }
+});
+
 test("connector 对 JSON 和纯文本响应都脱敏 auth-value", async () => {
   const restorePage = installPage();
   const previousFetch = globalThis.fetch;
@@ -153,7 +168,7 @@ test("expectedUrl 不匹配或执行期间页面变化时拒绝请求结果", as
   }
 });
 
-test("金字塔 30d 未批准时 7d 也不得 fetch", async () => {
+test("本轮 30d 不在范围时仍查询 7d，且不会误调用未批准的 30d", async () => {
   const restorePage = installPage();
   const previousFetch = globalThis.fetch;
   try {
@@ -169,9 +184,10 @@ test("金字塔 30d 未批准时 7d 也不得 fetch", async () => {
       })),
       expectedUrl: PAGE_URL
     });
-    assert.equal(calls, 0);
-    assert.equal(result.modules.pyramid.periods["7d"].status, "unverified");
+    assert.equal(calls, 1);
+    assert.equal(result.modules.pyramid.periods["7d"].status, "success");
     assert.equal(result.modules.pyramid.periods["30d"].status, "unverified");
+    assert.equal(result.modules.pyramid.periods["30d"].error, "not_needed");
   } finally {
     if (previousFetch === undefined) delete globalThis.fetch;
     else globalThis.fetch = previousFetch;

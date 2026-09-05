@@ -1,4 +1,5 @@
 import {
+  assertControlledTestMap,
   DEFAULT_CONFIG,
   MODULE_NAMES,
   RESULT_STATUSES,
@@ -8,10 +9,12 @@ import {
   getModuleEndpoint,
   getModuleEndpoints,
   isModuleCallable,
+  materializeApiMap,
   mergeOperatingSources,
   normalizePyramidPeriod,
   normalizeViolationData,
   sanitizeForStorage,
+  shouldReplaceBundledMap,
   validateApiMap
 } from "./core.js";
 import { connectorMain } from "./connector.js";
@@ -59,17 +62,21 @@ async function ensureDefaults() {
   const current = await storageGet([STORAGE_KEYS.config, STORAGE_KEYS.apiMap]);
   const values = {};
   if (!current[STORAGE_KEYS.config]) values[STORAGE_KEYS.config] = { ...DEFAULT_CONFIG };
-  if (!current[STORAGE_KEYS.apiMap]) values[STORAGE_KEYS.apiMap] = await loadDefaultMap();
+  const bundledMap = await loadDefaultMap();
+  const storedMap = current[STORAGE_KEYS.apiMap];
+  const replaceBundledMap = shouldReplaceBundledMap(storedMap, bundledMap);
+  if (replaceBundledMap) values[STORAGE_KEYS.apiMap] = bundledMap;
   if (Object.keys(values).length) await storageSet(values);
   return {
     config: clampConfig(current[STORAGE_KEYS.config] || values[STORAGE_KEYS.config] || DEFAULT_CONFIG),
-    apiMap: current[STORAGE_KEYS.apiMap] || values[STORAGE_KEYS.apiMap]
+    apiMap: values[STORAGE_KEYS.apiMap] || current[STORAGE_KEYS.apiMap]
   };
 }
 
 async function getSettings() {
   const settings = await ensureDefaults();
   const map = validateApiMap(settings.apiMap);
+  assertControlledTestMap(map, await loadDefaultMap());
   return { config: settings.config, apiMap: map };
 }
 
@@ -120,7 +127,7 @@ function buildResult(raw, state, apiMap) {
     const sources = Array.isArray(operatingRaw?.responses)
       ? operatingRaw.responses.map((response, index) => ({ data: response?.data, endpoint: endpoints[index] }))
       : (operatingRaw?.data !== undefined ? [{ data: operatingRaw.data, endpoint: operatingMap }] : []);
-    result.operating_report = mergeOperatingSources(sources, operatingMap);
+    result.operating_report = mergeOperatingSources(sources, operatingMap, { hotel: state.hotel });
     const missingFields = Object.entries(result.operating_report).filter(([key, value]) => key !== "category" && value === null).map(([key]) => key);
     if (missingFields.length) {
       addFailedModule(result, "operating_report");
@@ -236,7 +243,7 @@ async function sendTabMessage(tabId, message) {
   }
 }
 
-async function runCollection(tabId, state, source = "automatic") {
+async function runCollection(tabId, state, source = "automatic", force = false) {
   if (!state || state.is_ebooking !== true || state.logged_in !== true || state.initialized !== true || state.stable !== true) {
     return { ok: false, skipped: true, reason: "page_not_ready_or_not_logged_in" };
   }
@@ -249,7 +256,7 @@ async function runCollection(tabId, state, source = "automatic") {
   const current = await storageGet([STORAGE_KEYS.lastSuccessByHotel]);
   const previous = Number(current[STORAGE_KEYS.lastSuccessByHotel]?.[key] || 0);
   const cooldownMs = settings.config.cooldownMinutes * 60 * 1000;
-  if (cooldownMs > 0 && previous > 0 && Date.now() - previous < cooldownMs) {
+  if (!force && cooldownMs > 0 && previous > 0 && Date.now() - previous < cooldownMs) {
     const cooldownUntil = new Date(previous + cooldownMs).toISOString();
     await sendTabMessage(tabId, { type: "CTRIP_COLLECTION_STATUS", status: "cooldown", cooldown_until: cooldownUntil });
     return { ok: true, skipped: true, reason: "cooldown", cooldown_until: cooldownUntil };
@@ -284,11 +291,11 @@ async function runCollection(tabId, state, source = "automatic") {
       target: { tabId },
       world: "MAIN",
       func: connectorMain,
-      args: [{ map: settings.apiMap, timeoutMs: settings.config.requestTimeoutMs, expectedUrl: latestState.url }]
+      args: [{ map: materializeApiMap(settings.apiMap), timeoutMs: settings.config.requestTimeoutMs, expectedUrl: latestState.url }]
     });
     raw = executions?.[0]?.result || { current_page_unchanged: false, modules: {}, error: "empty_connector_result" };
   } catch (error) {
-    raw = { current_page_unchanged: true, modules: {}, error: "execute_script_failed" };
+    raw = { current_page_unchanged: false, modules: {}, error: "execute_script_failed" };
   } finally {
     inFlightHotels.delete(key);
   }
@@ -330,17 +337,19 @@ async function handlePageState(tabId, state) {
     return pageStates;
   });
   const settings = await getSettings();
-  if (state.stable && state.initialized && state.logged_in === true) return runCollection(tabId, state, "automatic");
+  if (settings.apiMap.map_kind !== "controlled_test" && state.stable && state.initialized && state.logged_in === true) return runCollection(tabId, state, "automatic");
   return { ok: true, accepted: true, config: settings.config };
 }
 
 async function currentTrackedTab() {
   const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  const candidate = tabs.find((tab) => tab.id && tabStates.get(tab.id)?.is_ebooking === true);
-  if (candidate) return { tabId: candidate.id, state: tabStates.get(candidate.id) };
-  const stored = await storageGet([STORAGE_KEYS.pageStates]);
-  for (const [id, state] of Object.entries(stored[STORAGE_KEYS.pageStates] || {})) {
-    if (state?.is_ebooking === true) return { tabId: Number(id), state };
+  for (const tab of tabs) {
+    let state;
+    try { state = await chrome.tabs.sendMessage(tab.id, { type: "CTRIP_READ_PAGE_STATE" }); } catch { continue; }
+    if (state?.is_ebooking === true && state.url === tab.url) {
+      tabStates.set(tab.id, state);
+      return { tabId: tab.id, state };
+    }
   }
   return null;
 }
@@ -354,7 +363,7 @@ async function debugState() {
       "7d": isModuleCallable(module, settings.apiMap.map_status, "7d", settings.apiMap.map_kind),
       "30d": isModuleCallable(module, settings.apiMap.map_status, "30d", settings.apiMap.map_kind)
     } : undefined;
-    return [name, { enabled: module.enabled === true, result: module.result || "unverified", callable: name === "pyramid" ? periods["7d"] && periods["30d"] : isModuleCallable(module, settings.apiMap.map_status, null, settings.apiMap.map_kind), periods }];
+    return [name, { enabled: module.enabled === true, result: module.result || "unverified", callable: name === "pyramid" ? periods["7d"] : isModuleCallable(module, settings.apiMap.map_status, null, settings.apiMap.map_kind), periods }];
   }));
   return {
     config: settings.config,
@@ -396,10 +405,11 @@ async function handleMessage(message, sender) {
   if (type === "CTRIP_DEBUG_RUN") {
     const target = await currentTrackedTab();
     if (!target) return { ok: false, error: "没有已识别的 eBooking 登录页面" };
-    return runCollection(target.tabId, target.state, "debug");
+    return runCollection(target.tabId, target.state, "manual", true);
   }
   if (type === "CTRIP_DEBUG_IMPORT_MAP") {
     const map = validateApiMap(message.map);
+    assertControlledTestMap(map, await loadDefaultMap());
     await storageSet({ [STORAGE_KEYS.apiMap]: map });
     return { ok: true, map_status: map.map_status };
   }

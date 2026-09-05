@@ -93,6 +93,14 @@ _TARGET_MODULE_PATH_MARKERS = (
     "/toolcenter/psi/",
 )
 _ORDINARY_PAGE_RE = re.compile(r"(?:order|ebkorder)", re.I)
+_STABILITY_PAGE_PATTERNS = {
+    "home": re.compile(r"(?:^|/)(?:home|index|homepage)(?:/|$)", re.I),
+    "order": re.compile(r"(?:order|ebkorder)", re.I),
+    "inventory": re.compile(r"(?:inventory|roomstatus|room-state|roomstate|roomcalendar|availab)", re.I),
+    # The operator confirms the price tab on this shared inventory route;
+    # URL matching alone cannot distinguish its price and inventory views.
+    "price": re.compile(r"(?:price|pricing|roomrate|room-rate|ratecalendar|rateplan)|^/ebkovsroom/inventory/calendar/?$", re.I),
+}
 _SAFE_REPLAY_HEADERS = {"accept", "content-type", "x-requested-with", "x-business-line", "x-client-version", "x-platform"}
 _SAFE_QUERY_VALUE_RE = re.compile(r"^[A-Za-z0-9._~-]+$")
 _CAPTURE_BINDING_FILE = ".capture-set-binding.sanitized.json"
@@ -803,10 +811,13 @@ def build_silent_comparison_snapshot(
     }
 
 
-def _page_kind_ok(test_id: str, url: str) -> bool:
+def _page_kind_ok(test_id: str, url: str, expected_page_kind: Optional[str] = None) -> bool:
     path = urlsplit(url).path.lower()
     if any(marker in path for marker in _TARGET_MODULE_PATH_MARKERS):
         return False
+    if expected_page_kind:
+        pattern = _STABILITY_PAGE_PATTERNS.get(expected_page_kind)
+        return bool(pattern and pattern.search(path))
     if test_id == "B":
         return "home" in path
     if test_id in {"C", "D"}:
@@ -865,6 +876,7 @@ async def run_target_replay(
     manual_refresh_confirmed: bool = False,
     confirm_capture_set_current_hotel: bool = False,
     as_of_date: Optional[str] = None,
+    expected_page_kind: Optional[str] = None,
     _comparison_snapshot_sink: Optional[list[Mapping[str, Any]]] = None,
 ) -> Mapping[str, Any]:
     """Run one B/C/D stage without navigating, focusing, clicking, or typing."""
@@ -905,7 +917,7 @@ async def run_target_replay(
 
         before = await _runtime_page_snapshot(page)
         exact_before = str(before.get("href") or "")
-        if not _page_kind_ok(test_id, exact_before):
+        if not _page_kind_ok(test_id, exact_before, expected_page_kind):
             raise RuntimeError(f"Current page does not satisfy the manually confirmed Test {test_id} page state.")
         page_objects_before = tuple(id(item) for item in context.pages)
 
@@ -1053,7 +1065,8 @@ async def run_target_replay(
             "test_id": test_id,
             "result": "PASS" if overall_pass else "FAIL",
             "tested_at": tested_at,
-            "page_kind": "homepage" if test_id == "B" else "ordinary_order_page",
+            "page_kind": expected_page_kind or ("homepage" if test_id == "B" else "ordinary_order_page"),
+            "page_kind_evidence": "operator_confirmed_price_tab_on_shared_route" if expected_page_kind == "price" and urlsplit(exact_before).path.rstrip("/") == "/ebkovsroom/inventory/calendar" else "route_match",
             "manual_refresh_confirmed": manual_refresh_confirmed if test_id == "D" else None,
             "requested_data_date": as_of_date,
             "page_url_before": sanitize_url(exact_before),
@@ -1063,6 +1076,7 @@ async def run_target_replay(
             "new_target_opened": page_objects_before != tuple(id(item) for item in context.pages),
             "login_state_valid_after": state_after.is_logged_in is True,
             "hotel_identity_unchanged": same_identity,
+            "hotel_identity_digest": identity_hash,
             "capture_set_bound_to_current_hotel": True,
             "endpoint_count": len(endpoint_reports),
             "endpoints": endpoint_reports,

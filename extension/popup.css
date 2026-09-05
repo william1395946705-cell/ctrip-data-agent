@@ -1,0 +1,26 @@
+:root {
+  color-scheme: light;
+  font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f7fb;
+  color: #14213d;
+}
+
+body { margin: 0; min-width: 360px; }
+main { padding: 16px; }
+header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+h1 { margin: 0; font-size: 18px; }
+header p { margin: 4px 0 12px; color: #667085; }
+.dot { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: #98a2b3; }
+.dot.ok { background: #12b76a; box-shadow: 0 0 0 4px #d1fadf; }
+.card { margin: 10px 0; padding: 12px; border: 1px solid #dbe2ee; border-radius: 10px; background: #fff; }
+.row { display: flex; justify-content: space-between; gap: 16px; margin: 7px 0; }
+.row span { color: #667085; }
+.row strong { max-width: 220px; text-align: right; overflow-wrap: anywhere; }
+.muted, .safety, .action { margin: 8px 0; color: #667085; line-height: 1.45; }
+button { width: 100%; padding: 10px 12px; border: 0; border-radius: 8px; background: #1769e0; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+button:disabled { background: #98a2b3; cursor: default; }
+.action { min-height: 19px; color: #175cd3; }
+h2 { margin: 0 0 8px; font-size: 14px; }
+details { margin-top: 10px; }
+summary { cursor: pointer; color: #175cd3; }
+pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; border-radius: 6px; background: #f2f4f7; font-size: 11px; }

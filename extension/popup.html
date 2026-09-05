@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ctrip Silent Collector</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>Ctrip Silent Collector</h1>
+        <p>授权测试版 · 数据仅保存在本机 · <span id="version"></span></p>
+      </div>
+      <span id="status-dot" class="dot neutral" aria-hidden="true"></span>
+    </header>
+
+    <section class="card">
+      <div class="row"><span>当前页面</span><strong id="page-status">检测中…</strong></div>
+      <div class="row"><span>酒店</span><strong id="hotel-name">—</strong></div>
+      <div class="row"><span>接口地图</span><strong id="map-status">检测中…</strong></div>
+      <p id="page-note" class="muted">请在已登录的 eBooking 页面打开本扩展。</p>
+    </section>
+
+    <button id="run" type="button" disabled>立即采集</button>
+    <p class="safety">采集不会跳转页面、点击、输入或抢焦点。</p>
+    <p id="action-status" class="action" role="status"></p>
+
+    <section class="card result-card">
+      <h2>最近一次采集</h2>
+      <div class="row"><span>状态</span><strong id="last-status">暂无</strong></div>
+      <div class="row"><span>时间</span><strong id="last-time">—</strong></div>
+      <div class="row"><span>当前页面未改变</span><strong id="url-unchanged">—</strong></div>
+      <div class="row"><span>7 天 ROAS</span><strong id="roas">—</strong></div>
+      <div class="row"><span>违约状态</span><strong id="violation">—</strong></div>
+      <p id="warnings" class="muted" role="status"></p>
+      <details>
+        <summary>查看完整本地结果</summary>
+        <pre id="last-result">暂无</pre>
+      </details>
+    </section>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

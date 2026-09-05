@@ -363,6 +363,16 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manual.manual_control, "artifacts/manual.json")
         self.assertEqual(manual.test_id, "B")
 
+        stability = _build_parser().parse_args([
+            "stability-test",
+            "--cdp-url", "http://127.0.0.1:9223",
+            "--page-kind", "inventory",
+            "--rounds", "3",
+        ])
+        self.assertEqual(stability.command, "stability-test")
+        self.assertEqual(stability.page_kind, "inventory")
+        self.assertEqual(stability.rounds, 3)
+
     def test_comparison_snapshot_uses_page_hotel_row_and_display_precision(self):
         projections = {
             "operating_advice": [{"good": [], "bad": [{"safe": True}]}],
@@ -405,6 +415,11 @@ class TargetReplayTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(_page_kind_ok("B", "https://ebooking.ctrip.com/home/mainland"))
         self.assertTrue(_page_kind_ok("C", "https://ebooking.ctrip.com/ebkorder/order-list"))
         self.assertTrue(_page_kind_ok("D", "https://ebooking.ctrip.com/ebkorder/order-list"))
+        self.assertTrue(_page_kind_ok("C", "https://ebooking.ctrip.com/roomstatus/calendar", "inventory"))
+        self.assertTrue(_page_kind_ok("C", "https://ebooking.ctrip.com/roomrate/price", "price"))
+        self.assertTrue(_page_kind_ok("C", "https://ebooking.ctrip.com/ebkovsroom/inventory/calendar", "price"))
+        self.assertFalse(_page_kind_ok("C", "https://ebooking.ctrip.com/ebkovsroom/inventory/calendar/other", "price"))
+        self.assertFalse(_page_kind_ok("C", "https://ebooking.ctrip.com/ebkorder/order-list", "price"))
         self.assertFalse(_page_kind_ok("B", "https://ebooking.ctrip.com/toolcenter/cpc/report"))
         self.assertFalse(_page_kind_ok("C", "https://ebooking.ctrip.com/datacenter/inland/businessreport"))
 
