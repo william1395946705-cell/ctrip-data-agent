@@ -6,6 +6,7 @@ import {
   clampConfig,
   createCollectionResult,
   derivePyramidOutput,
+  getFlowHotelIdentity,
   getModuleEndpoint,
   getModuleEndpoints,
   isModuleCallable,
@@ -14,6 +15,9 @@ import {
   normalizePyramidPeriod,
   normalizeViolationData,
   sanitizeForStorage,
+  samePageHotel,
+  isHotelIdentityVerified,
+  normalizeHotelIdentity,
   shouldReplaceBundledMap,
   validateApiMap
 } from "./core.js";
@@ -109,11 +113,16 @@ function moduleUsableStatus(status) {
   return status === "success" || status === "no_data";
 }
 
-function buildResult(raw, state, apiMap) {
+function buildResult(raw, state, apiMap, pageIdentityStable = true) {
   const result = createCollectionResult(state.hotel, nowIso());
   result.collector.current_page_unchanged = raw?.current_page_unchanged === true;
   if (!result.collector.current_page_unchanged) {
     addWarning(result, "采集期间当前页面 URL 发生变化，已丢弃本次业务结果");
+    for (const moduleName of MODULE_NAMES) addFailedModule(result, moduleName);
+    return result;
+  }
+  if (!pageIdentityStable) {
+    addWarning(result, "采集期间酒店身份发生变化或无法确认，已丢弃本次业务结果");
     for (const moduleName of MODULE_NAMES) addFailedModule(result, moduleName);
     return result;
   }
@@ -127,7 +136,21 @@ function buildResult(raw, state, apiMap) {
     const sources = Array.isArray(operatingRaw?.responses)
       ? operatingRaw.responses.map((response, index) => ({ data: response?.data, endpoint: endpoints[index] }))
       : (operatingRaw?.data !== undefined ? [{ data: operatingRaw.data, endpoint: operatingMap }] : []);
-    result.operating_report = mergeOperatingSources(sources, operatingMap, { hotel: state.hotel });
+    const flowIdentity = getFlowHotelIdentity(sources, operatingMap, state.hotel);
+    if (!["page_id_bound", "observed_order_bound"].includes(flowIdentity.status)) {
+      for (const moduleName of MODULE_NAMES) addFailedModule(result, moduleName);
+      addWarning(result, "经营报告酒店身份与当前页面不一致，已拒绝归属结果");
+      return result;
+    }
+    if (!String(result.hotel.hotel_id || "").trim()) result.hotel.hotel_id = flowIdentity.hotel_id;
+    result.collector.hotel_identity_source = flowIdentity.status;
+    result.collector.hotel_identity_verification = flowIdentity.status === "page_id_bound"
+      ? "page_id_bound"
+      : "manual_check_required";
+    if (result.collector.hotel_identity_verification === "manual_check_required") {
+      addWarning(result, "当前页面未提供可绑定酒店 ID；结果仅按已审核行序归属，需人工复核且不会进入成功冷却");
+    }
+    result.operating_report = mergeOperatingSources(sources, operatingMap, { hotel: result.hotel });
     const missingFields = Object.entries(result.operating_report).filter(([key, value]) => key !== "category" && value === null).map(([key]) => key);
     if (missingFields.length) {
       addFailedModule(result, "operating_report");
@@ -203,6 +226,7 @@ function buildResult(raw, state, apiMap) {
 function completeCollection(result, raw) {
   if (!result || result.collector.current_page_unchanged !== true) return false;
   if (result.collector.failed_modules.length) return false;
+  if (!isHotelIdentityVerified(result.collector.hotel_identity_verification)) return false;
   if (!raw?.modules) return false;
   const statuses = [];
   const operating = raw.modules.operating_report;
@@ -214,7 +238,7 @@ function completeCollection(result, raw) {
   return statuses.every(moduleUsableStatus);
 }
 
-async function persistCollection(result, hotel, raw, diagnostics) {
+async function persistCollection(result, raw, diagnostics) {
   const current = await storageGet([STORAGE_KEYS.history, STORAGE_KEYS.lastSuccessByHotel]);
   const history = Array.isArray(current[STORAGE_KEYS.history]) ? current[STORAGE_KEYS.history] : [];
   const settings = await getSettings();
@@ -229,7 +253,7 @@ async function persistCollection(result, hotel, raw, diagnostics) {
     const lastSuccess = current[STORAGE_KEYS.lastSuccessByHotel] && typeof current[STORAGE_KEYS.lastSuccessByHotel] === "object"
       ? current[STORAGE_KEYS.lastSuccessByHotel]
       : {};
-    lastSuccess[hotel] = Date.now();
+    lastSuccess[`id:${normalizeHotelIdentity(result.hotel?.hotel_id)}`] = Date.now();
     values[STORAGE_KEYS.lastSuccessByHotel] = lastSuccess;
   }
   await storageSet(values);
@@ -254,7 +278,11 @@ async function runCollection(tabId, state, source = "automatic", force = false) 
   const key = hotelKey(state, tabId);
   if (inFlightHotels.has(key)) return { ok: false, skipped: true, reason: "in_flight" };
   const current = await storageGet([STORAGE_KEYS.lastSuccessByHotel]);
-  const previous = Number(current[STORAGE_KEYS.lastSuccessByHotel]?.[key] || 0);
+  // Without a page-visible ID we cannot select an identity-specific cooldown key
+  // before the read-only flow response has been checked. Do not let a same-name
+  // prior hotel suppress this collection.
+  const hasDirectPageHotelId = Boolean(normalizeHotelIdentity(state.hotel?.hotel_id));
+  const previous = hasDirectPageHotelId ? Number(current[STORAGE_KEYS.lastSuccessByHotel]?.[key] || 0) : 0;
   const cooldownMs = settings.config.cooldownMinutes * 60 * 1000;
   if (!force && cooldownMs > 0 && previous > 0 && Date.now() - previous < cooldownMs) {
     const cooldownUntil = new Date(previous + cooldownMs).toISOString();
@@ -296,11 +324,10 @@ async function runCollection(tabId, state, source = "automatic", force = false) 
     raw = executions?.[0]?.result || { current_page_unchanged: false, modules: {}, error: "empty_connector_result" };
   } catch (error) {
     raw = { current_page_unchanged: false, modules: {}, error: "execute_script_failed" };
-  } finally {
-    inFlightHotels.delete(key);
   }
-
-  const result = buildResult(raw, state, settings.apiMap);
+  let stateAfter = null;
+  try { stateAfter = await chrome.tabs.sendMessage(tabId, { type: "CTRIP_READ_PAGE_STATE" }); } catch { /* fail closed below */ }
+  const result = buildResult(raw, state, settings.apiMap, samePageHotel(state.hotel, stateAfter?.hotel));
   if (raw.error) addWarning(result, `Connector 执行失败：${raw.error}`);
   const diagnostics = sanitizeForStorage({
     collected_at: result.collected_at,
@@ -324,9 +351,13 @@ async function runCollection(tabId, state, source = "automatic", force = false) 
       } : null];
     }))
   });
-  await persistCollection(result, key, raw, diagnostics);
-  await sendTabMessage(tabId, { type: "CTRIP_COLLECTION_STATUS", status: "complete", result });
-  return { ok: true, result, diagnostics };
+  try {
+    await persistCollection(result, raw, diagnostics);
+    await sendTabMessage(tabId, { type: "CTRIP_COLLECTION_STATUS", status: "complete", result });
+    return { ok: true, result, diagnostics };
+  } finally {
+    inFlightHotels.delete(key);
+  }
 }
 
 async function handlePageState(tabId, state) {
@@ -365,12 +396,14 @@ async function debugState() {
     } : undefined;
     return [name, { enabled: module.enabled === true, result: module.result || "unverified", callable: name === "pyramid" ? periods["7d"] : isModuleCallable(module, settings.apiMap.map_status, null, settings.apiMap.map_kind), periods }];
   }));
+  const tracked = await currentTrackedTab();
+  const lastResult = current[STORAGE_KEYS.lastResult] || null;
   return {
     config: settings.config,
     map_status: settings.apiMap.map_status,
     modules,
-    page: sanitizeForStorage(await currentTrackedTab()),
-    last_result: current[STORAGE_KEYS.lastResult] || null,
+    page: sanitizeForStorage(tracked),
+    last_result: lastResult,
     diagnostics: current[STORAGE_KEYS.diagnostics] || null,
     history: current[STORAGE_KEYS.history] || [],
     last_success_by_hotel: current[STORAGE_KEYS.lastSuccessByHotel] || {}

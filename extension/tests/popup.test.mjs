@@ -11,20 +11,26 @@ test("弹窗直接显示版本、地图门槛和全部失败原因", async () =>
   };
   const context = vm.createContext({
     document: { getElementById: element },
-    chrome: { runtime: { getManifest: () => ({ version: "0.2.1" }), sendMessage() {} } }
+    chrome: { runtime: { getManifest: () => ({ version: "0.2.3" }), sendMessage() {} } }
   });
   vm.runInContext(await readFile(new URL("../popup.js", import.meta.url), "utf8"), context);
   const state = {
     map_status: "unverified",
+    page: { state: { hotel: { hotel_name: "测试酒店" } } },
     last_result: { collector: {
-      failed_modules: ["operating_report", "pyramid", "violation"],
-      warnings: ["经营报告状态为 unverified"]
-    } }
+      failed_modules: [],
+      warnings: ["当前页面未提供可绑定酒店 ID"],
+      hotel_identity_source: "observed_order_bound",
+      hotel_identity_verification: "manual_check_required",
+      current_page_unchanged: true
+    }, hotel: { hotel_id: "H-1", hotel_name: "测试酒店" } },
   };
   context.state = state;
   vm.runInContext("render(state)", context);
-  assert.equal(element("version").textContent, "0.2.1");
+  assert.equal(element("version").textContent, "0.2.3");
   assert.equal(element("map-status").textContent, "unverified");
-  assert.match(element("last-status").textContent, /^全部模块失败/);
-  assert.equal(element("warnings").textContent, "经营报告状态为 unverified");
+  assert.equal(element("last-status").textContent, "采集完成，门店需人工复核");
+  assert.equal(element("warnings").textContent, "当前页面未提供可绑定酒店 ID");
+  assert.equal(element("result-hotel-id").textContent, "H-1");
+  assert.equal(element("identity-source").textContent, "observed_order_bound");
 });
