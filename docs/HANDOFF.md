@@ -1,5 +1,13 @@
 # Project Handoff
 
+## 2026-09-07 违约正样本校验修复 0.3.3（实机复测待完成）
+
+- 分支 `codex/fix-violation-positive` 基于最新 `main`，并保留当前 0.3.2 受控自动采集、表格与扩展上下文失效保护实现；未直接修改 `main`。
+- 根因：connector 对 `violation_list` 的业务完整性校验只接受 `data.totalRecords = 0` 且 `records` 为空。真实有违约返回正数和非空 records 时，即使 HTTP 200、业务 code 正常，也被错误归类为 `business_shape_or_completeness_failed`，最终显示 `request_failed`。
+- 修复：`totalRecords=0` 且 records 为 null/空数组才表示无违约；`totalRecords>0` 且 records 为非空数组才表示成功并由现有归一化输出“有违约”；缺失、空列表与正数不一致、非法计数、HTTP/网络失败继续 fail-closed 为 `request_failed`/unknown，不得输出无违约。
+- Python 目标重放投影同步支持正数 count + 非空 records，仅保存数量/状态摘要，不保存违规详情或认证材料。
+- 新增正样本、无违约样本、畸形正数样本测试。离线 Extension 测试已通过；真实有违约酒店的自然请求与新包 replay 仍需用户加载 0.3.3 后人工复测并确认 HTTP status、业务 code、请求参数与 `totalRecords`。
+
 ## 2026-09-07 扩展上下文失效修复 0.3.2
 
 - 分支 `codex/fix-extension-context` 基于最新 `main` 并纳入当前受控本地自动采集/表格分发实现；未直接修改 `main`。

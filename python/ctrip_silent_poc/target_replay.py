@@ -642,9 +642,19 @@ def _business_projection(endpoint_id: str, value: Any, variant: str) -> Any:
         if not isinstance(data, Mapping):
             return None
         total, records = data.get("totalRecords"), data.get("records")
-        if _number(total) != 0 or records not in (None, []):
+        total_number = _number(total)
+        if total_number is None or total_number < 0:
             return None
-        return {"totalRecords": 0, "recordsEmpty": True}
+        if total_number == 0 and records in (None, []):
+            return {"totalRecords": 0, "recordsEmpty": True, "status": "无违约"}
+        if total_number > 0 and isinstance(records, list) and records:
+            return {
+                "totalRecords": int(total_number) if total_number.is_integer() else total_number,
+                "recordsEmpty": False,
+                "recordsCount": len(records),
+                "status": "有违约",
+            }
+        return None
     return None
 
 
@@ -770,8 +780,11 @@ def build_silent_comparison_snapshot(
             roas_7d = _number(records[0].get("roas"))
 
     violation_status = None
-    if isinstance(violation, Mapping) and violation.get("totalRecords") == 0 and violation.get("recordsEmpty") is True:
-        violation_status = "无违约"
+    if isinstance(violation, Mapping):
+        if violation.get("status") in {"有违约", "无违约"}:
+            violation_status = violation["status"]
+        elif violation.get("totalRecords") == 0 and violation.get("recordsEmpty") is True:
+            violation_status = "无违约"
 
     operating = {
         "operating_reminder": operating_reminder,

@@ -1,5 +1,11 @@
 # Ctrip Silent Collector POC 阶段报告
 
+## 2026-09-07 违约正样本修复 0.3.3（待实机确认）
+
+当前已定位：违约 connector 原先把 `totalRecords > 0` 的真实记录响应当成不完整响应，导致 `request_failed`。0.3.3 改为只接受两种明确形态：`totalRecords=0` 且 records 为空表示无违约；`totalRecords>0` 且 records 为非空数组表示有违约。缺失、矛盾、网络失败或业务 code 失败仍保持 unknown/request_failed，不误报无违约。
+
+离线已覆盖正样本、无违约样本和畸形正数样本。此前 discovery 只捕获过无违约样本；本次真实有违约页面的自然请求参数、HTTP/业务 code 与新包 replay 仍需授权测试人员加载 0.3.3 后复测，完成前不把违约模块标记为 verified。
+
 ## 2026-09-05 更新：打包与普通 Chrome 人工试用
 
 后续加固分支将页面身份与流量行 ID 做运行时检查；在该分支经过重新打包、人工复测并合并前，本段不改变已合并 POC 的证据状态。

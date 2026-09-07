@@ -290,6 +290,7 @@ test("金字塔仅在 7 天明确 0/暂无时使用 30 天，失败不判未投�
 
 test("违约只能由明确状态/计数输出，缺失不猜测", () => {
   assert.deepEqual(normalizeViolationData({ data: { count: 0 } }, { field_paths: { violation_count: "data.count" } }), { status: "无违约", explicit: true });
+  assert.deepEqual(normalizeViolationData({ data: { totalRecords: 2, records: [{ id: 1 }] } }, { field_paths: { violation_count: "data.totalRecords" } }), { status: "有违约", explicit: true });
   assert.deepEqual(normalizeViolationData({ data: { status: "有违规" } }, { field_paths: { status: "data.status" } }), { status: "有违约", explicit: true });
   assert.equal(normalizeViolationData({ data: {} }, { field_paths: { status: "data.status" } }).status, null);
 });
