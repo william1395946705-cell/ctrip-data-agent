@@ -1,5 +1,13 @@
 # Project Handoff
 
+## 2026-09-07 扩展上下文失效修复 0.3.2
+
+- 分支 `codex/fix-extension-context` 基于最新 `main` 并纳入当前受控本地自动采集/表格分发实现；未直接修改 `main`。
+- 修复扩展重载或更新时旧 eBooking 页面继续运行的 content script 调用 `chrome.runtime.sendMessage` 抛出 `Uncaught Error: Extension context invalidated` 的问题。消息发送现在捕获同步异常和 callback `runtime.lastError`，识别上下文失效后停止定时器、MutationObserver 和后续状态上报。
+- 该保护只处理扩展生命周期失效，不吞掉业务采集错误，也不改变 URL、页面焦点、登录态或携程页面内容。重新加载新扩展后，用户需刷新一次已打开的 eBooking 页面以安装新 content script；不需要重新登录或清理 Cookie。
+- 新增 content script VM 回归测试，覆盖失效回调清理和非携程页面不注册监听器。当前离线 Extension 测试 35/35 通过；真实浏览器中的新包回归需在用户加载 0.3.2 后再做一次确认。
+- 版本提升为 `0.3.2`，安装说明和 README 已同步；打包目录/ZIP 仍为本地生成物并由 `.gitignore` 排除。
+
 ## 2026-09-07 本地数据表与分发包 0.3.1
 
 - 从最新main建 codex/package-local-tables，纳入尚未合并的自动采集分支，保留PR #5/#6依赖；不直接修改main。
