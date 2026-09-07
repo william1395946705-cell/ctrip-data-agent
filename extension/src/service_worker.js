@@ -22,6 +22,7 @@ import {
   validateApiMap
 } from "./core.js";
 import { connectorMain } from "./connector.js";
+import { autoPolicy, automaticDecision, localDay, snapshotComplete } from "./automatic.js";
 
 const STORAGE_KEYS = Object.freeze({
   config: "config",
@@ -37,6 +38,37 @@ const DEFAULT_MAP_PATH = "config/ctrip_api_map.json";
 const tabStates = new Map();
 const inFlightHotels = new Map();
 let pageStatesQueue = Promise.resolve();
+let collectionQueue = Promise.resolve();
+
+function runCollection(tabId, state, source = "automatic", force = false) {
+  const operation = collectionQueue.catch(() => {}).then(async () => {
+    // Re-read after waiting in the queue; never execute against stale page identity.
+    const fresh = await chrome.tabs.sendMessage(tabId, { type: "CTRIP_READ_PAGE_STATE" });
+    if (!fresh?.stable || !fresh.initialized || fresh.logged_in !== true || fresh.url !== state.url ||
+      !samePageHotel(state.hotel, fresh.hotel)) return { ok: false, skipped: true, reason: "page_changed" };
+    const stored = await storageGet(["automaticPolicy", "automaticLedger"]);
+    const policy = autoPolicy(stored.automaticPolicy);
+    const day = localDay();
+    // A name groups request budgets only; it is never evidence of identity.
+    const key = normalizeHotelIdentity(fresh.hotel?.hotel_name) || hotelKey(fresh, tabId);
+    const ledger = Object.fromEntries(Object.entries(stored.automaticLedger || {}).filter(([, v]) => v?.day === day));
+    if (source === "automatic") {
+      const decision = automaticDecision(ledger[key], policy);
+      if (decision !== "run") return { ok: true, skipped: true, reason: decision };
+      ledger[key] = { day, attempts: (ledger[key]?.attempts || 0) + 1, attemptedAt: Date.now(), collected: false };
+      // Persist before network work so worker termination cannot erase the limit.
+      await storageSet({ automaticLedger: ledger });
+    }
+    const response = await executeCollection(tabId, fresh, source, force);
+    if (snapshotComplete(response?.result)) {
+      ledger[key] = { ...ledger[key], day, collected: true };
+      await storageSet({ automaticLedger: ledger });
+    }
+    return response;
+  });
+  collectionQueue = operation.catch(() => {});
+  return operation;
+}
 
 const storageGet = (keys) => chrome.storage.local.get(keys);
 const storageSet = (values) => chrome.storage.local.set(values);
@@ -267,7 +299,7 @@ async function sendTabMessage(tabId, message) {
   }
 }
 
-async function runCollection(tabId, state, source = "automatic", force = false) {
+async function executeCollection(tabId, state, source = "automatic", force = false) {
   if (!state || state.is_ebooking !== true || state.logged_in !== true || state.initialized !== true || state.stable !== true) {
     return { ok: false, skipped: true, reason: "page_not_ready_or_not_logged_in" };
   }
@@ -314,12 +346,13 @@ async function runCollection(tabId, state, source = "automatic", force = false) 
   inFlightHotels.set(key, true);
   await sendTabMessage(tabId, { type: "CTRIP_COLLECTION_STATUS", status: "running", source });
   let raw;
+  const requestMap = materializeApiMap(settings.apiMap);
   try {
     const executions = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
       func: connectorMain,
-      args: [{ map: materializeApiMap(settings.apiMap), timeoutMs: settings.config.requestTimeoutMs, expectedUrl: latestState.url }]
+      args: [{ map: requestMap, timeoutMs: settings.config.requestTimeoutMs, expectedUrl: latestState.url }]
     });
     raw = executions?.[0]?.result || { current_page_unchanged: false, modules: {}, error: "empty_connector_result" };
   } catch (error) {
@@ -328,6 +361,13 @@ async function runCollection(tabId, state, source = "automatic", force = false) 
   let stateAfter = null;
   try { stateAfter = await chrome.tabs.sendMessage(tabId, { type: "CTRIP_READ_PAGE_STATE" }); } catch { /* fail closed below */ }
   const result = buildResult(raw, state, settings.apiMap, samePageHotel(state.hotel, stateAfter?.hotel));
+  result.collector.trigger = source;
+  result.collector.statistics_window = {
+    operating_date: requestMap.modules.operating_report.endpoints[1]?.payload?.startDate || null,
+    roas_start: requestMap.modules.pyramid.periods?.["7d"]?.payload?.startDate || null,
+    roas_end: requestMap.modules.pyramid.periods?.["7d"]?.payload?.endDate || null,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+  };
   if (raw.error) addWarning(result, `Connector 执行失败：${raw.error}`);
   const diagnostics = sanitizeForStorage({
     collected_at: result.collected_at,
@@ -368,7 +408,7 @@ async function handlePageState(tabId, state) {
     return pageStates;
   });
   const settings = await getSettings();
-  if (settings.apiMap.map_kind !== "controlled_test" && state.stable && state.initialized && state.logged_in === true) return runCollection(tabId, state, "automatic");
+  if (state.stable && state.initialized && state.logged_in === true) return runCollection(tabId, state, "automatic");
   return { ok: true, accepted: true, config: settings.config };
 }
 
@@ -399,6 +439,7 @@ async function debugState() {
   const tracked = await currentTrackedTab();
   const lastResult = current[STORAGE_KEYS.lastResult] || null;
   return {
+    automatic_policy: autoPolicy((await storageGet(["automaticPolicy"])).automaticPolicy),
     config: settings.config,
     map_status: settings.apiMap.map_status,
     modules,
@@ -413,6 +454,8 @@ async function debugState() {
 async function clearLocalState() {
   await pageStatesQueue.catch(() => {});
   await storageRemove([
+    "automaticLedger",
+    "automaticPolicy",
     STORAGE_KEYS.lastResult,
     STORAGE_KEYS.history,
     STORAGE_KEYS.lastSuccessByHotel,
@@ -429,6 +472,11 @@ async function clearLocalState() {
 
 async function handleMessage(message, sender) {
   const type = message?.type;
+  if (type === "CTRIP_AUTO_TOGGLE") {
+    const current = autoPolicy((await storageGet(["automaticPolicy"])).automaticPolicy);
+    await storageSet({ automaticPolicy: { ...current, enabled: !current.enabled } });
+    return { ok: true };
+  }
   if (type === "CTRIP_PAGE_CONFIG_REQUEST") {
     const settings = await getSettings();
     return { ok: true, config: settings.config };
