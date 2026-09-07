@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>携程本地数据表</title><link rel="stylesheet" href="table.css"></head>
+<body><h1>携程本地数据表</h1>
+<p>每行是一次采集，空白表示未取得数据，不代表零。时间显示为北京时间；统计日期以实际请求为准。</p>
+<p id="summary" role="status">读取中…</p>
+<button id="refresh">刷新表格</button> <button id="export" disabled>导出表格（CSV）</button>
+<p>数据保存在本浏览器的扩展存储中，不上传。导出文件由浏览器保存到下载目录；可在下载设置中开启“下载前询问保存位置”。请定期导出备份，卸载扩展会删除本地记录。</p>
+<div class="scroll"><table id="data"></table></div><script type="module" src="table.js"></script></body></html>
