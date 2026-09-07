@@ -21,6 +21,9 @@ function formatTime(value) {
 }
 
 function render(state) {
+  const automatic = state.automatic_policy?.enabled !== false;
+  $("auto-state").textContent = automatic ? "自动采集已开启：打开或刷新页面后执行，每日完整采集一次。" : "自动采集已暂停";
+  $("auto-toggle").textContent = automatic ? "暂停自动采集" : "开启自动采集";
   $("version").textContent = chrome.runtime.getManifest().version;
   $("map-status").textContent = text(state.map_status);
   const page = state.page?.state || state.page;
@@ -36,9 +39,12 @@ function render(state) {
   const result = state.last_result;
   if (!result) return;
   const failed = Array.isArray(result.collector?.failed_modules) ? result.collector.failed_modules : [];
-  $("last-status").textContent = failed.length ? `${failed.length === 3 ? "全部模块失败" : "部分失败"}：${failed.join("、")}` : "采集成功";
+  $("last-status").textContent = failed.length ? `${failed.length === 3 ? "全部模块失败" : "部分失败"}：${failed.join("、")}` :
+    (result.collector?.hotel_identity_verification === "manual_check_required" ? "采集完成，门店需人工复核" : "采集成功");
   $("warnings").textContent = (result.collector?.warnings || []).join("；");
   $("last-time").textContent = formatTime(result.collected_at);
+  $("result-hotel-id").textContent = text(result.hotel?.hotel_id);
+  $("identity-source").textContent = text(result.collector?.hotel_identity_source);
   $("url-unchanged").textContent = result.collector?.current_page_unchanged === true ? "是" : "否";
   $("roas").textContent = text(result.pyramid?.roas_7d);
   $("violation").textContent = text(result.violation?.status);
@@ -69,4 +75,8 @@ $("run").addEventListener("click", async () => {
   await refresh();
 });
 
+$("auto-toggle").addEventListener("click", async () => {
+  await send("CTRIP_AUTO_TOGGLE");
+  await refresh();
+});
 void refresh();
