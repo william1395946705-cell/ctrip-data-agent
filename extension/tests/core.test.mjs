@@ -7,6 +7,8 @@ import {
   computeCategory,
   createCollectionResult,
   derivePyramidOutput,
+  getFlowHotelIdentity,
+  isHotelIdentityVerified,
   getModuleEndpoints,
   isLoginExpiredResponse,
   isModuleCallable,
@@ -16,6 +18,7 @@ import {
   normalizePyramidPeriod,
   normalizeViolationData,
   sanitizeForStorage,
+  samePageHotel,
   shouldReplaceBundledMap,
   validateApiMap
 } from "../src/core.js";
@@ -246,6 +249,28 @@ test("真实 4 接口适配器生成完整经营指标且按已核对行序计�
     comp_order_conversion: 0.1081,
     category: "低曝低转"
   });
+});
+
+test("流量接口酒店 ID 必须与页面 ID 或已核对行序绑定", () => {
+  const endpoint = { response_adapter: "ctrip_operating_flow_v1", flow_row_order_confirmed: true };
+  const source = { endpoint, data: [{ hotelId: "hotel-A" }, { hotelId: "competition" }] };
+  assert.deepEqual(getFlowHotelIdentity([source], { endpoints: [endpoint] }, { hotel_id: "hotel-A" }), { status: "page_id_bound", hotel_id: "hotel-A" });
+  assert.deepEqual(getFlowHotelIdentity([source], { endpoints: [endpoint] }, {}), { status: "observed_order_bound", hotel_id: "hotel-A" });
+  assert.deepEqual(getFlowHotelIdentity([source], { endpoints: [endpoint] }, { hotel_id: "other" }), { status: "page_flow_mismatch" });
+  assert.deepEqual(getFlowHotelIdentity([{ endpoint, data: [{ hotelId: "same" }, { hotelId: "same" }] }], { endpoints: [endpoint] }, {}), { status: "invalid_flow_identity" });
+});
+
+test("页面酒店身份需要在采集前后保持相同", () => {
+  assert.equal(samePageHotel({ hotel_id: "A", hotel_name: "测试酒店" }, { hotel_id: "a", hotel_name: "测试酒店" }), true);
+  assert.equal(samePageHotel({ hotel_name: "测试 酒店" }, { hotel_name: "测试酒店" }), false);
+  assert.equal(samePageHotel({ hotel_name: "测试酒店" }, { hotel_name: "另一酒店" }), false);
+  assert.equal(samePageHotel({ hotel_id: "A", hotel_name: "测试酒店" }, { hotel_id: "B", hotel_name: "测试酒店" }), false);
+  assert.equal(samePageHotel({ hotel_id: "A", hotel_name: "测试酒店" }, { hotel_name: "测试酒店" }), false);
+});
+
+test("只有页面可见 ID 绑定才算已验证身份", () => {
+  assert.equal(isHotelIdentityVerified("page_id_bound"), true);
+  assert.equal(isHotelIdentityVerified("manual_check_required"), false);
 });
 
 test("金字塔仅在 7 天明确 0/暂无时使用 30 天，失败不判未投流", () => {
