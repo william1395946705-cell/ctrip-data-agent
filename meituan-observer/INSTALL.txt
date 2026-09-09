@@ -1,14 +1,18 @@
-Meituan Passive Inspector 0.1.1
+Meituan Controlled Replay Inspector 0.2.0
 
 1. Unzip into a permanent folder. In chrome://extensions enable Developer mode,
    choose Load unpacked and select the folder containing manifest.json.
 2. Open your authorized me.meituan.com data center page. Close and reopen DevTools.
-3. Select the "美团监听" DevTools tab (may be under >>), then "开始监听".
-4. Manually refresh the page, keep Yesterday selected, and wait for data to load.
-5. Choose "导出脱敏记录". Share only this sanitized JSON, never a HAR or headers.
+3. Select the "美团监听" DevTools tab (may be under >>), then "开始捕获昨日请求".
+4. Manually refresh the data-center page, keep Yesterday selected, and wait for all three target requests to load.
+5. Manually switch the same hotel to an ordinary page (home/orders/etc.). Tick the same-hotel confirmation and click
+   "在当前普通页执行一次". This sends only the three exact, naturally observed GET URLs from the current page session.
+6. Choose "导出 Replay 报告" for a sanitized comparison, or "导出脱敏发现" for the discovery record.
+   Share only these JSON files, never a HAR, headers, or browser profile.
 
-No automatic navigation, login, replay, upload or background polling.
-Data stays in panel memory until export. Closing DevTools discards it.
+No automatic navigation, login, upload, scheduled polling, clicks, keyboard input or focus changes.
+Replay is a single manual, read-only run and is disabled after it completes. Data stays in panel memory until export.
+Closing DevTools discards it. Raw runtime request URLs (including session-bearing query values) are never exported.
 Only meituan.com/dianping.com requests on the inspected me.meituan.com page
 are considered. Headers and raw string values are omitted. Numeric metric
 samples and ISO dates may remain for manual comparison. Unknown fields retain
@@ -17,6 +21,8 @@ Limits: 200 requests, 1MB response, bounded structure depth and array samples.
 Truncated/omitted content is NOT evidence that an endpoint has no business data.
 Offline tested; actual Chrome request capture still needs user acceptance.
 
-0.1.1: three captured candidate routes retain allowlisted card titles, bounded
-numeric display strings, units and dateRange/dataScope selectors for review.
-Unknown titles/values remain omitted; no endpoint is enabled for replay.
+0.2.0: the three exact discovered routes can be captured in memory and replayed
+once from a manually confirmed ordinary page. The current page URL, focus state,
+HTTP status, business status, card count and bounded old/replay values are reported.
+Cross-origin/CORS, login expiry, redirects, shape changes and network errors remain
+NOT_VERIFIED; there is no bypass or fallback navigation. Unknown titles/values remain omitted.

@@ -1,10 +1,20 @@
 <!doctype html>
-<html lang="zh-CN"><meta charset="utf-8"><title>美团被动监听</title>
+<html lang="zh-CN"><meta charset="utf-8"><title>美团昨日数据验证</title>
 <body>
-<h2>美团被动监听 · 0.1.1</h2>
-<p>只在当前 me.meituan.com 页面记录自然请求，不发送或重放业务请求。关闭开发者工具后结束；记录仅暂存在内存中。</p>
-<button id="start">开始监听</button> <button id="stop">停止监听</button> <button id="export">导出脱敏记录</button>
-<p id="status">尚未开始。点击开始后，再手动刷新美团数据中心，保持“昨日”。</p>
-<p>导出不含请求头、Cookie、认证值、原始响应或门店身份。仅保留字段结构、日期、有限的指标数值。最多200条，每条响应最多1MB。</p>
-<pre id="list"></pre><script type="module" src="panel.js"></script>
+<h2>美团昨日数据 · 受控验证 0.2.0</h2>
+<p>先在美团数据中心的“昨日”页面启动监听并手动刷新；三类自然请求齐全后，再由测试人员手动切到同一家门店的普通页面进行一次只读重放。</p>
+<button id="start">开始捕获昨日请求</button>
+<button id="stop">停止捕获</button>
+<button id="export">导出脱敏发现</button>
+<p id="captureStatus">尚未开始。当前页应是美团数据中心的“昨日”页面。</p>
+<pre id="templates"></pre>
+<hr>
+<h3>普通页受控 Replay</h3>
+<label><input id="sameHotel" type="checkbox"> 我确认当前页仍是同一家门店，并且允许在当前页执行一次只读验证</label>
+<br><button id="replay" disabled>在当前普通页执行一次</button>
+<button id="exportReplay" disabled>导出 Replay 报告</button>
+<p id="replayStatus">需要先捕获三个目标请求，再手动切到首页、订单等普通美团页面。</p>
+<pre id="replayResult"></pre>
+<p>重放不导航、不点击、不输入、不读取请求头，不保存 Cookie/Token/门店身份。原始运行时 URL 只在本机当前 DevTools 进程内存中使用，不进入导出文件。</p>
+<script type="module" src="panel.js"></script>
 </body></html>

@@ -1,5 +1,13 @@
 # Project Handoff
 
+## 2026-09-09 美团受控普通页 Replay（开发中）
+
+- 分支 `codex/meituan-controlled-replay` 在被动发现分支上增加了 0.2.0 DevTools 面板：先捕获数据中心“昨日”页面自然产生的三个已发现 GET 接口，再由测试人员手动确认同店普通页面并执行一次只读 Replay。
+- 目前没有真实普通页 Replay 结果，因此三个接口状态仍是 `DISCOVERED / NOT VERIFIED`。不能把离线测试或界面代码存在当成接口已验证。
+- 运行时模板仅保存于当前 DevTools 面板内存，原始 URL（含动态会话查询值）不写入发现导出、Replay 报告、Git 或日志；重放不读取请求头，不导航、不点击、不输入、不抢焦点。
+- Replay 报告只包含安全的路径、HTTP/业务状态、卡片数量、有限 old/replay 值比较、URL/焦点是否保持；网络失败、CORS、登录失效、重定向和结构变化均 fail-closed。
+- 必须由测试人员手动完成：数据中心昨日页开始捕获并刷新 → 三路齐全 → 手动切同一家普通页 → 勾选同店确认 → 执行一次 Replay → 导出 `meituan-replay-report.json`。在这一步完成前不要宣称普通页可用。
+
 ## 2026-09-09 美团三类目标接口发现
 
 - 0.1.1用户导出188条自然请求，经营businessData（真实版本段v1）、score、customerAcquisition三类GET接口均HTTP200/business status=0，返回10/3/4张卡片。字段标题及可见数值与用户此前截图抽样相符，标记DISCOVERED，非VERIFIED。
