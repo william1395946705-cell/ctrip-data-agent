@@ -1,5 +1,19 @@
 # 美团昨日数据接口发现
 
+## 2026-09-09 普通页 Replay 实测结果
+
+测试人员提供的 `meituan-replay-report.json`（报告本身未包含原始 URL、查询参数、请求头、Cookie、Token 或酒店身份）给出了本轮受控 Replay 证据：
+
+| 接口 | HTTP | 业务码 | 卡片 | 值比较 | 页面/焦点 |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `.../projectEffect/customerAcquisition` | 200 | 0 | 4/4 | 4/4 match | 未改变 / 未改变 |
+| `.../home/score` | 200 | 0 | 3/3 | 3/3 match | 未改变 / 未改变 |
+| `/api/v1/ebooking/home/businessData` | 200 | 0 | 10/10 | 10/10 match | 未改变 / 未改变 |
+
+本次报告整体为 `PASS`，17/17 张卡片与数据中心自然捕获基线一致。该结果证明在测试人员确认同店的普通美团页面中，三个已发现接口可以复用当前浏览器会话完成一次只读 Replay，且没有导航、抢焦点或页面变化。
+
+边界仍然保留：报告只证明响应基线与 Replay 一致，没有附带同一时刻的页面可见值截图或酒店身份机器绑定；`hotel_identity_verification` 仍为 `manual_check_required`。因此接口地图继续保持 `discovered/disabled`，不启用自动采集，也不把本次 PASS 扩大为所有美团页面、所有门店或跨日稳定性结论。
+
 ## 2026-09-09 受控普通页 Replay 实现（0.2.0）
 
 已在独立 `meituan-observer/` DevTools 扩展中加入受控验证链路，但尚未把真实普通页结果标记为 VERIFIED：

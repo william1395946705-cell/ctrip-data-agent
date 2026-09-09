@@ -1,5 +1,12 @@
 # Project Handoff
 
+## 2026-09-09 美团普通页 Replay 实测回传
+
+- 测试人员回传 `meituan-replay-report.json`，整体 `PASS`。三个真实已发现接口均 HTTP 200、业务码 0：获客宝 4/4、评分 3/3、经营 10/10 张卡片逐值 `match`，合计 17/17。
+- 三个端点均报告 `current_page_unchanged:true`、`focus_unchanged:true`；没有自动切页或抢焦点。报告未包含原始 URL、认证参数、请求头或酒店身份。
+- 这是普通页复用当前浏览器会话的受控 Replay 证据；仍缺同一时刻页面可见值截图/人工逐字段核对和机器酒店身份绑定。接口地图继续 `discovered/disabled`，不得据此开启正式自动采集。
+- 下一步应在另一家授权门店重复“数据中心昨日自然捕获 → 同店普通页一次 Replay”，并观察刷新/跨日与 CORS、登录失效、结构变化的 fail-closed 行为；不扩大请求范围。
+
 ## 2026-09-09 美团受控普通页 Replay（开发中）
 
 - 分支 `codex/meituan-controlled-replay` 在被动发现分支上增加了 0.2.0 DevTools 面板：先捕获数据中心“昨日”页面自然产生的三个已发现 GET 接口，再由测试人员手动确认同店普通页面并执行一次只读 Replay。
