@@ -1,5 +1,12 @@
 # Project Handoff
 
+## 2026-09-09 违约正样本普通 Chrome 人工验收
+
+- 测试人员确认同一家授权酒店有违约：0.3.2 显示 violation/request_failed；升级 0.3.3 后显示“有违约”，failed_modules 为空，current_page_unchanged 为 true。真实正样本的最终状态人工验收 PASS。
+- 证据来自用户提供的扩展版本和归一化结果，未保存酒店身份、业务原值或认证信息。成功结果符合当前 connector 的正数 totalRecords + 非空 records 校验路径；但结果未提供具体 totalRecords、records 数量、HTTP status 或业务 code，不能称为这些原始字段的独立核对 PASS。
+- 自然请求与 replay 的 query/body 逐项比对、具体条数核对仍待完成；本轮没有修改请求模板，也没有把模块升级为 verified。门店身份 manual_check_required 警告仍保留。
+- 修复代码离线验证：Python 45/45、Extension 36/36、compileall 和 ZIP 完整性通过；本次仅补充人工验收文档。
+
 ## 2026-09-07 违约正样本校验修复 0.3.3（实机复测待完成）
 
 - 分支 `codex/fix-violation-positive` 基于最新 `main`，并保留当前 0.3.2 受控自动采集、表格与扩展上下文失效保护实现；未直接修改 `main`。

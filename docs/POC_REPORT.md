@@ -1,5 +1,11 @@
 # Ctrip Silent Collector POC 阶段报告
 
+## 2026-09-09 违约正样本状态人工验收 PASS
+
+测试人员确认有违约的同一家授权酒店，普通 Chrome 0.3.2 返回 request_failed；更新至 0.3.3 后返回“有违约”、failed_modules 为空、current_page_unchanged 为 true。该证据支持正样本校验修复在真实浏览器有效。
+
+验收范围是用户提供的最终状态，不包含原始请求/响应独立核对。具体 totalRecords、records 数量、HTTP status、业务 code 及自然请求与 replay 参数对照尚未提供；正数计数和非空列表仅由当前代码成功路径推断，不能伪称已直接观测其数值。酒店身份仍需人工复核，接口地图不升级 verified。以下 9 月 7 日记录为修复时状态。
+
 ## 2026-09-07 违约正样本修复 0.3.3（待实机确认）
 
 当前已定位：违约 connector 原先把 `totalRecords > 0` 的真实记录响应当成不完整响应，导致 `request_failed`。0.3.3 改为只接受两种明确形态：`totalRecords=0` 且 records 为空表示无违约；`totalRecords>0` 且 records 为非空数组表示有违约。缺失、矛盾、网络失败或业务 code 失败仍保持 unknown/request_failed，不误报无违约。
