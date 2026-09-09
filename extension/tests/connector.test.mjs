@@ -35,6 +35,16 @@ function operatingMap(item) {
   };
 }
 
+function violationMap(item) {
+  return {
+    map_status: "verified",
+    map_kind: "verified",
+    modules: {
+      violation: verifiedModule([item])
+    }
+  };
+}
+
 function pyramidMap(period30d) {
   return {
     map_status: "verified",
@@ -94,6 +104,57 @@ test("真实端点拒绝 HTTP 200 HTML、错误业务码和不完整字段", asy
     const result = await connectorMain({ map: operatingMap(endpoint("/datacenter/api/dataCenter/sale/fetchMarketOverViewV2", { id: "operating_market_overview" })), expectedUrl: PAGE_URL });
     assert.equal(result.modules.operating_report.responses[0].status, "success");
   } finally { globalThis.fetch = previous; restore(); }
+});
+
+test("违约端点接受有记录正样本，同时保持空样本和畸形样本边界", async () => {
+  const restore = installPage();
+  const previous = globalThis.fetch;
+  const item = endpoint("/toolcenter/api/psi/queryEbkPunlishMent", {
+    id: "violation_list",
+    method: "POST",
+    body_format: "json",
+    payload: {
+      selectedCategory: [0],
+      pageIndex: 1,
+      pageSize: "30",
+      selectedStatus: "-1",
+      defectCategoryId: 0,
+      subCategoryId: 0
+    },
+    field_paths: { violation_count: "data.totalRecords" }
+  });
+  try {
+    globalThis.fetch = async () => response({
+      code: 0,
+      message: "",
+      data: { totalRecords: 2, records: [{ id: 1 }, { id: 2 }] }
+    });
+    const positive = await connectorMain({ map: violationMap(item), expectedUrl: PAGE_URL });
+    const positiveResponse = positive.modules.violation.responses[0];
+    assert.equal(positiveResponse.status, "success");
+    assert.equal(positiveResponse.data.data.totalRecords, 2);
+    assert.equal(positiveResponse.data.data.records.length, 2);
+
+    globalThis.fetch = async () => response({
+      code: 0,
+      message: "",
+      data: { totalRecords: 0, records: null }
+    });
+    const empty = await connectorMain({ map: violationMap(item), expectedUrl: PAGE_URL });
+    assert.equal(empty.modules.violation.responses[0].status, "success");
+
+    globalThis.fetch = async () => response({
+      code: 0,
+      message: "",
+      data: { totalRecords: 2, records: [] }
+    });
+    const malformed = await connectorMain({ map: violationMap(item), expectedUrl: PAGE_URL });
+    assert.equal(malformed.modules.violation.responses[0].status, "request_failed");
+    assert.equal(malformed.modules.violation.responses[0].error, "business_shape_or_completeness_failed");
+  } finally {
+    globalThis.fetch = previous;
+    restore();
+  }
 });
 
 test("connector 对 JSON 和纯文本响应都脱敏 auth-value", async () => {

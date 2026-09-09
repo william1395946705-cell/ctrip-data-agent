@@ -1,5 +1,61 @@
 # Project Handoff
 
+## 2026-09-09 违约正样本普通 Chrome 人工验收
+
+- 测试人员确认同一家授权酒店有违约：0.3.2 显示 violation/request_failed；升级 0.3.3 后显示“有违约”，failed_modules 为空，current_page_unchanged 为 true。真实正样本的最终状态人工验收 PASS。
+- 证据来自用户提供的扩展版本和归一化结果，未保存酒店身份、业务原值或认证信息。成功结果符合当前 connector 的正数 totalRecords + 非空 records 校验路径；但结果未提供具体 totalRecords、records 数量、HTTP status 或业务 code，不能称为这些原始字段的独立核对 PASS。
+- 自然请求与 replay 的 query/body 逐项比对、具体条数核对仍待完成；本轮没有修改请求模板，也没有把模块升级为 verified。门店身份 manual_check_required 警告仍保留。
+- 修复代码离线验证：Python 45/45、Extension 36/36、compileall 和 ZIP 完整性通过；本次仅补充人工验收文档。
+
+## 2026-09-07 违约正样本校验修复 0.3.3（实机复测待完成）
+
+- 分支 `codex/fix-violation-positive` 基于最新 `main`，并保留当前 0.3.2 受控自动采集、表格与扩展上下文失效保护实现；未直接修改 `main`。
+- 根因：connector 对 `violation_list` 的业务完整性校验只接受 `data.totalRecords = 0` 且 `records` 为空。真实有违约返回正数和非空 records 时，即使 HTTP 200、业务 code 正常，也被错误归类为 `business_shape_or_completeness_failed`，最终显示 `request_failed`。
+- 修复：`totalRecords=0` 且 records 为 null/空数组才表示无违约；`totalRecords>0` 且 records 为非空数组才表示成功并由现有归一化输出“有违约”；缺失、空列表与正数不一致、非法计数、HTTP/网络失败继续 fail-closed 为 `request_failed`/unknown，不得输出无违约。
+- Python 目标重放投影同步支持正数 count + 非空 records，仅保存数量/状态摘要，不保存违规详情或认证材料。
+- 新增正样本、无违约样本、畸形正数样本测试。离线 Extension 测试已通过；真实有违约酒店的自然请求与新包 replay 仍需用户加载 0.3.3 后人工复测并确认 HTTP status、业务 code、请求参数与 `totalRecords`。
+
+## 2026-09-07 扩展上下文失效修复 0.3.2
+
+- 分支 `codex/fix-extension-context` 基于最新 `main` 并纳入当前受控本地自动采集/表格分发实现；未直接修改 `main`。
+- 修复扩展重载或更新时旧 eBooking 页面继续运行的 content script 调用 `chrome.runtime.sendMessage` 抛出 `Uncaught Error: Extension context invalidated` 的问题。消息发送现在捕获同步异常和 callback `runtime.lastError`，识别上下文失效后停止定时器、MutationObserver 和后续状态上报。
+- 该保护只处理扩展生命周期失效，不吞掉业务采集错误，也不改变 URL、页面焦点、登录态或携程页面内容。重新加载新扩展后，用户需刷新一次已打开的 eBooking 页面以安装新 content script；不需要重新登录或清理 Cookie。
+- 新增 content script VM 回归测试，覆盖失效回调清理和非携程页面不注册监听器。当前离线 Extension 测试 35/35 通过；真实浏览器中的新包回归需在用户加载 0.3.2 后再做一次确认。
+- 版本提升为 `0.3.2`，安装说明和 README 已同步；打包目录/ZIP 仍为本地生成物并由 `.gitignore` 排除。
+
+## 2026-09-07 本地数据表与分发包 0.3.1
+
+- 从最新main建 codex/package-local-tables，纳入尚未合并的自动采集分支，保留PR #5/#6依赖；不直接修改main。
+- 用户已确认0.3.0自动触发，提供结果trigger=automatic，三个模块无失败，日期窗口明确；重复刷新去重尚无单独用户确认。
+- 新增扩展本地表格页，自动读取已有history并响应存储更新；按次显示门店、北京时间/UTC、经营数据日、ROAS窗口、13核心字段及异常/复核提示。CSV按钮按用户操作下载，不自动弹框、不改携程页。
+- CSV使用BOM、字段白名单和现有脱敏器，转义引号换行、阻止公式注入，ID与排名以文本前缀保护。缺失留空，0保留。仅测试虚构样本，不把真实酒店业务值写入包。
+- 沿用历史缓存默认20次/配置上限100次（全门店合计），界面明确显示；卸载会丢失缓存，须定期导出。浏览器不能自动写回扩展安装目录，下载位置由用户浏览器设置决定。
+- Windows/Edge及Excel/WPS实际打开下载尚待人工验收；现有Mac Chrome采集证据不等于这些兼容性均已通过。
+- 离线测试Python45/45、compileall、Extension33/33、语法检查和ZIP完整性通过；安装说明使用ASCII文件名避免跨系统ZIP文件名乱码。程序包不含采集数据。
+
+## 2026-09-07 受控本地自动采集 0.3.0
+
+- 分支 codex/automatic-local-collection 从最新 main 创建，再快进纳入尚未合并的 PR #5 全部提交；未修改远程 main。后续 PR 包含 #5 的依赖修改。
+- 用户提供 0.2.3 今日手动结果：三个模块未报告失败，四象限与曝光/下单转化相对关系一致；未提供同日目标页面对照，不能宣称今日字段全部核验通过。原值不进入仓库。
+- 允许已审核 controlled_test 六接口在页面稳定上报时自动采集。持久化每日尝试额度、默认 30 分钟重试间隔及三次上限；完整快照当天不再自动请求。仅由正常页面事件触发重试，无网络轮询。
+- 完整快照与身份验证独立：manual_check_required 保留，不进入旧 verified 冷却，但会停止当天重复自动请求。名称仅作为请求额度分组；同名门店可能共享额度，未实现安装实例到内部门店编号绑定。
+- 全部采集串行，排队后重新读取页面身份/URL；请求开始前持久化尝试次数，后台重启不丢失限额。新增暂停按钮、触发来源和统计窗口。
+- 离线：Python 45/45、compileall；Extension 31/31，覆盖多标签并发、后台重新初始化、失败冷却、跨天、登录失效、排队时切店；真实 Chrome 自动触发及真实重启恢复仍待更新插件后人工验收。
+- 下一步：重载扩展，手动刷新普通 eBooking 页面且不点采集，确认结果 trigger=automatic；再刷新应不更新采集时间。此版本仍本地测试，不上传服务器。
+
+## 2026-09-05 酒店身份绑定加固（代码与浏览器回归完成）
+
+- 分支 `codex/harden-hotel-identity`，基于 PR #4 合并后的 `main` 提交 `b81237de843e036c22b0bbda5b2ba3c6cd78fd94`。
+- 目标：收紧扩展的页面酒店与流量接口本店行归属。新增采集前后页面身份一致性检查；页面可见酒店 ID 时必须与 flow 第一行 ID 匹配；页面未提供 ID 时保留当前授权酒店已审核行序，但不创建可持久化的自动身份绑定。
+- 页面身份变化、ID 不匹配、重复/缺失 flow ID、无法读取结束页身份都会丢弃全部模块结果。并修复 in-flight 锁在持久化前释放的竞态。
+- 独立安全复核发现并修复：采集后页面丢失先前可见酒店 ID 时，即使酒店名称相同也 fail-closed；不会降级为仅名称成功。
+- 不读取 Cookie、Profile 或 localStorage；本地仅保存现有结果中的业务酒店 ID、结果和页面状态。成功冷却只对页面可见 ID 的结果生效。
+- 普通 Chrome 0.2.2 人工回归：同一普通已登录 eBooking 页面连续两次手动采集成功，页面 URL 未变化、无自动切页或抢焦点。第一次建立、第二次复核同名页面与 flow 本店行的本地 ID 绑定；两次字段与上一轮样本一致，failed_modules/warnings 均为空。真实酒店名称和 ID 仅在授权浏览器本地结果中，不写入仓库。
+- 最终离线验证：Python 45/45、compileall、Extension 26/26、打包和 ZIP 完整性、diff 检查通过；常见凭据格式、真实测试酒店名称/ID和本机路径扫描无发现。独立复核的全部阻塞已关闭。
+- 新门店人工字段核对已反馈一致，说明第二家授权门店可调用相同 6 个接口；但页面未暴露可验证酒店 ID，无法安全证明跨页面的人工确认归属。因此 0.2.3 改为 fail-closed：该类结果保持 `manual_check_required`，不写成功冷却、不提供持久化确认按钮；只有页面可见 ID 的结果才可进入已验证成功路径。
+- 0.2.3 普通 Chrome 回归已完成：授权页面手动采集时 6 个接口均返回、`failed_modules` 为空、当前 URL 未改变；页面未提供可绑定酒店 ID，因此界面正确显示“门店需人工复核”，并保留身份警告，不误报为已验证成功。
+- 0.2.3 代码与离线验证已完成：Python 45/45、compileall、Extension 27/27、`node --check`、MV3 打包、ZIP 完整性和 `git diff --check` 均通过。安全扫描未发现常见凭据格式。
+
 ## 2026-09-05 打包与浏览器测试（Draft 交付）
 
 - 普通 Chrome 扩展 0.2.0 经测试人员重新加载后，于 09-05 完成首页一次采集；用户提供的截图与本地结果显示 13 个核心字段非空、failed_modules/warnings 为空、URL 未改变。此为用户提供的真实扩展证据，不代替同日逐字段页面对照。

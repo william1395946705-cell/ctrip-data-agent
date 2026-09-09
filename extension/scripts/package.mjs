@@ -13,7 +13,7 @@ const files = [
   "popup.html",
   "popup.css",
   "popup.js",
-  "README.md"
+  "README.md", "table.html", "table.css", "table.js", "INSTALL.txt"
 ];
 const directories = ["src", "config"];
 

@@ -195,9 +195,21 @@ export function connectorMain(args = {}) {
         if (endpoint.id === "operating_scores") valid = [body?.serviceScore, body?.ctripRatingall].every(numeric);
         if (endpoint.id === "operating_flow") valid = Array.isArray(data) && data.length === 2 && data.every(row => row && row.date === endpoint.payload?.startDate && [row.listExposure, row.detailExposure, row.orderFillingNum].every(numeric));
         if (endpoint.id === "pyramid_7d") valid = Array.isArray(body?.records) && body.records.length === 1 && Number(body.totalRecords) === 1 && numeric(body.records[0]?.roas);
-        // Positive samples are outside this POC: return incomplete rather than
-        // promoting an untested interpretation to a successful collection.
-        if (endpoint.id === "violation_list") valid = numeric(body?.totalRecords) && Number(body.totalRecords) === 0 && (body.records === null || (Array.isArray(body.records) && body.records.length === 0));
+        if (endpoint.id === "violation_list") {
+          const totalRecords = numeric(body?.totalRecords) ? Number(body.totalRecords) : null;
+          const records = body?.records;
+          const pageSize = numeric(endpoint.payload?.pageSize) ? Number(endpoint.payload.pageSize) : null;
+          const emptyRecords = records === null || (Array.isArray(records) && records.length === 0);
+          const positiveRecords = Array.isArray(records) && records.length > 0 &&
+            totalRecords !== null && totalRecords > 0 &&
+            (pageSize === null || records.length <= pageSize) && records.length <= totalRecords;
+          // A zero count with an empty list is an explicit no-violation result.
+          // A positive count must include at least one record; accepting a
+          // positive count with a missing/empty list would hide a partial or
+          // malformed response as a valid violation state.
+          valid = totalRecords !== null && totalRecords >= 0 &&
+            ((totalRecords === 0 && emptyRecords) || positiveRecords);
+        }
         if (!valid) return { status: "request_failed", period, http_status: response.status, error: "business_shape_or_completeness_failed" };
       }
       const paths = endpoint.field_paths || endpoint.response_schema?.field_paths || {};

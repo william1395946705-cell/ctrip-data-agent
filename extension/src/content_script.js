@@ -5,8 +5,48 @@
 
   let config = { quietWindowMs: 1500 };
   let quietTimer = null;
+  let urlTimer = null;
+  let observer = null;
+  let contextInvalidated = false;
   let lastUrl = location.href;
   let lastReportedSignature = "";
+
+  const isContextInvalidated = (error) => /extension context invalidated/i.test(
+    String(error?.message || error || "")
+  );
+
+  const stop = () => {
+    if (contextInvalidated) return;
+    contextInvalidated = true;
+    clearTimeout(quietTimer);
+    quietTimer = null;
+    clearInterval(urlTimer);
+    urlTimer = null;
+    observer?.disconnect();
+    observer = null;
+  };
+
+  // Reloading an unpacked extension invalidates content-script contexts that
+  // are still attached to open pages. Treat that lifecycle event as a normal
+  // stop condition so the old page does not emit an uncaught console error.
+  const safeRuntimeSendMessage = (message, callback) => {
+    if (contextInvalidated) return false;
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        const runtimeError = chrome.runtime.lastError;
+        if (runtimeError) {
+          if (isContextInvalidated(runtimeError)) stop();
+          callback?.(null, runtimeError);
+          return;
+        }
+        callback?.(response, null);
+      });
+      return true;
+    } catch (error) {
+      if (isContextInvalidated(error)) stop();
+      return false;
+    }
+  };
 
   const safeText = (element) => {
     if (!element || ["INPUT", "TEXTAREA", "SELECT", "FORM"].includes(element.tagName)) return "";
@@ -35,8 +75,8 @@
 
   const pageState = () => {
     const hotelId = firstAttribute(
-      ["[data-hotel-id]", "[data-hotelid]", "[data-property-id]", "meta[name='hotel-id']", "meta[name='property-id']"],
-      ["data-hotel-id", "data-hotelid", "data-property-id", "content"]
+      ["[data-hotel-id]", "[data-hotelid]", "[data-hotel-code]", "[data-property-id]", "meta[name='hotel-id']", "meta[name='hotel-code']", "meta[name='property-id']"],
+      ["data-hotel-id", "data-hotelid", "data-hotel-code", "data-property-id", "content"]
     );
     const hotelName = firstAttribute(
       ["[data-hotel-name]", "[data-property-name]", "meta[name='hotel-name']", "meta[name='property-name']"],
@@ -79,45 +119,55 @@
   };
 
   const sendState = () => {
+    if (contextInvalidated) return;
     const state = pageState();
     state.stable = state.initialized;
     const signature = [state.url, state.logged_in, state.hotel.hotel_id, state.hotel.hotel_name, state.initialized].join("|");
     if (!state.initialized || signature === lastReportedSignature) return;
     lastReportedSignature = signature;
-    chrome.runtime.sendMessage({ type: "CTRIP_PAGE_STATE", state }, () => {
-      void chrome.runtime.lastError;
-    });
+    safeRuntimeSendMessage({ type: "CTRIP_PAGE_STATE", state });
   };
 
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type === "CTRIP_READ_PAGE_STATE") {
-      const state = pageState();
-      state.stable = state.initialized;
-      sendResponse(state);
-    }
-  });
+  try {
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      if (contextInvalidated) return;
+      if (message?.type === "CTRIP_READ_PAGE_STATE") {
+        const state = pageState();
+        state.stable = state.initialized;
+        sendResponse(state);
+      }
+    });
+  } catch (error) {
+    if (isContextInvalidated(error)) stop();
+    else throw error;
+  }
 
   const scheduleStableReport = () => {
+    if (contextInvalidated) return;
     clearTimeout(quietTimer);
     if (document.readyState !== "complete") return;
     quietTimer = setTimeout(sendState, Math.max(250, Number(config.quietWindowMs) || 1500));
   };
 
   const resetForUrl = () => {
+    if (contextInvalidated) return;
     if (location.href === lastUrl) return;
     lastUrl = location.href;
     lastReportedSignature = "";
     scheduleStableReport();
   };
 
-  chrome.runtime.sendMessage({ type: "CTRIP_PAGE_CONFIG_REQUEST" }, (response) => {
-    if (!chrome.runtime.lastError && response && response.config) config = response.config;
+  const onLoad = () => scheduleStableReport();
+
+  window.addEventListener("load", onLoad, { once: true });
+  observer = new MutationObserver(() => scheduleStableReport());
+  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
+  urlTimer = setInterval(resetForUrl, 1000);
+
+  safeRuntimeSendMessage({ type: "CTRIP_PAGE_CONFIG_REQUEST" }, (response, error) => {
+    if (contextInvalidated) return;
+    if (!error && response && response.config) config = response.config;
     scheduleStableReport();
   });
-
-  window.addEventListener("load", scheduleStableReport, { once: true });
-  const observer = new MutationObserver(() => scheduleStableReport());
-  observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true });
-  setInterval(resetForUrl, 1000);
   scheduleStableReport();
 })();
