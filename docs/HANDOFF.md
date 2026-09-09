@@ -1,5 +1,11 @@
 # Project Handoff
 
+## 2026-09-09 美团三类目标接口发现
+
+- 0.1.1用户导出188条自然请求，经营businessData（真实版本段v1）、score、customerAcquisition三类GET接口均HTTP200/business status=0，返回10/3/4张卡片。字段标题及可见数值与用户此前截图抽样相符，标记DISCOVERED，非VERIFIED。
+- 明确经营/获客宝dateRange字符串1；dataScope及酒店参数名仍被脱敏省略。未恢复删除值、未执行replay。经营涨跌方向部分被省略、满房率截图遮挡、评分更新时间及机器酒店身份绑定尚待验证。
+- 本次只更新证据文档，未改代码；既有监听器5/5脱敏测试通过记录仍适用。具体证据和限制见docs/MEITUAN_DISCOVERY.md。用户导出及业务原值不进入Git。
+
 ## 2026-09-09 美团首次捕获分析及监听器0.1.1
 
 - 收到190条用户提供的脱敏记录，识别 eb.meituan.com 上 businessData、score、projectEffect/customerAcquisition 三类 GET 候选，HTTP均为200，分别返回10/3/4张卡片。真实用途及昨日数据仍 NOT VERIFIED，详见 docs/MEITUAN_DISCOVERY.md。

@@ -1,5 +1,23 @@
 # 美团昨日数据接口发现
 
+## 2026-09-09 第二次捕获：三类接口 DISCOVERED
+
+用户提供0.1.1脱敏导出，共188条记录。下列自然GET请求均HTTP200、业务status=0，并包含完整10/3/4张目标卡片的白名单投影。
+
+| 实际路径（域名 eb.meituan.com） | 状态 | 证据 |
+| --- | --- | --- |
+| /api/v1/ebooking/home/businessData | DISCOVERED | 十张经营卡片标题与范围对应；引流价、曝光、浏览人数、支付转化率、销售和入住数据等可见值及若干排名、同行均值与此前昨日截图一致 |
+| /api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/score | DISCOVERED | 三项评分及排名与此前评分区截图逐项相符；重复两次响应投影一致 |
+| /api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition | DISCOVERED | 四项获客宝指标与此前可见四张卡片数值相符；未独立确认附加比较值含义 |
+
+证据为用户提供的页面截图与自然请求脱敏导出，不是机器同期页面采样；酒店身份被删除，当前归属依据用户操作上下文，尚无机器身份绑定。满房率在昨日截图中被遮挡，不标为已页面核对。业务原值及整个导出文件不提交Git。
+
+已观察参数：经营与获客宝 dateRange 均为字符串1，对应用户所述昨日操作；评分没有 dateRange。经营 dataScope 值仍被脱敏省略；酒店参数名被0.1.x替换为private-field。GET无body。实际日历日期尚未从响应确认，不将采集日期等同统计日期。
+
+响应为 data.cards 卡片数组，白名单投影完整覆盖17张卡片；这是本次卡片数量完整，不代表其他明细接口或分页已验证。extAttrs的部分方向符号被省略，不能把null解释为无变化或根据正的幅度猜涨跌；标签/键语义还需确认。评分更新时间也未保留。
+
+发现阶段可以确认这三类接口对应目标页面。所有接口保持 enabled:false，尚未进行普通页replay。下一阶段需要在本机内存保留运行时请求模板并补齐dataScope、酒店参数名及绑定、指标方向和日期依据；不能从脱敏文件猜测恢复被删值。页面域名me.meituan.com与接口域名eb.meituan.com不同，跨域会话及iframe执行上下文必须实测。
+
 ## 2026-09-09 首次被动捕获
 
 测试人员提供 0.1.0 导出的190条脱敏记录。以下为实际观测的 GET 候选，均返回 HTTP 200，域名为 eb.meituan.com；尚未做业务值核对或 replay，状态全部 NOT VERIFIED。
