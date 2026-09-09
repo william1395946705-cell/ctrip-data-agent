@@ -1,0 +1,7 @@
+{
+  "manifest_version": 3,
+  "name": "Meituan Controlled Replay Inspector",
+  "version": "0.3.1",
+  "description": "授权测试用：被动捕获美团昨日接口，并在人工确认的普通页执行一次只读重放。",
+  "devtools_page": "devtools.html"
+}
