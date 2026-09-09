@@ -1,4 +1,11 @@
-Meituan Controlled Replay Inspector 0.3.0
+Meituan Controlled Replay Inspector 0.3.1
+
+0.3.1 adds bounded error diagnostics and passive ordinary-page parameter-name presence.
+After loading the new folder, reopen DevTools / 美团监听, manually refresh the HOME
+page, then run the direct test. Export meituan-direct-report.json.
+No data-center visit is needed. This diagnostic update does not claim the server
+request failure is fixed. It identifies known error field types, numeric codes and
+message categories without retaining raw messages, headers or parameter values.
 
 NEW: Direct ordinary-page test (no data-center capture needed)
 Load this folder in chrome://extensions (Developer mode / Load unpacked).

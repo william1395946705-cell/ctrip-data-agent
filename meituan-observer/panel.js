@@ -1,6 +1,7 @@
 import {targetEndpoint, safeRequest, responseStructure} from './sanitize.mjs';
 import {dataCenterPage, ordinaryPage, prepareTemplate, validateSet, pageRequest} from './replay.mjs';
 import {directProbe, safeDirectReport} from './direct.mjs';
+import {responseDiagnostics, parameterPresence} from './diagnostics.mjs';
 
 const $ = id => document.getElementById(id);
 let running = false;
@@ -11,6 +12,9 @@ let templates = new Map();
 let replayReport = null;
 let replayInFlight = false;
 let replayConsumed = false;
+let ordinaryMetadata=[];
+let metadataEpoch=0;
+let metadataExamined=0;
 
 function setText(id, value) { $(id).textContent = value; }
 function inspect(expression) {
@@ -66,6 +70,7 @@ $('stop').onclick = () => {
 $('sameHotel').onchange = updateTemplateView;
 
 chrome.devtools.network.onNavigated.addListener(url => {
+  ++metadataEpoch;ordinaryMetadata=[];metadataExamined=0;
   let origin = '';
   try { origin = new URL(url).origin; } catch {}
   if (origin !== 'https://me.meituan.com') {
@@ -86,6 +91,18 @@ chrome.devtools.network.onNavigated.addListener(url => {
   updateTemplateView();
 });
 
+chrome.devtools.network.onRequestFinished.addListener(async entry => {
+  const epoch=metadataEpoch;
+  const metadata=parameterPresence(entry);
+  if(metadata && metadataExamined<100) {
+    ++metadataExamined;
+    const info=await pageInfo();
+    if(epoch===metadataEpoch && info && ordinaryPage(info.href) && ordinaryMetadata.length<100) {
+      // Only the presence of known keys is kept, never their values or raw URLs.
+      if(!ordinaryMetadata.some(r=>JSON.stringify(r)===JSON.stringify(metadata)))ordinaryMetadata.push(metadata);
+    }
+  }
+});
 chrome.devtools.network.onRequestFinished.addListener(async entry => {
   if (!running || accepted >= 200 || !targetEndpoint(entry.request?.url)) return;
   const mime = String(entry.response?.content?.mimeType || '').toLowerCase();
@@ -213,16 +230,19 @@ $('direct').onclick=async()=>{
     setText('directResult','');lastDirect=Date.now();
     setText('directStatus','正在测试当前会话，只发送已发现的三个只读接口，遇到错误会停止。');
     const key=randomKey();
-    const started=await inspect(`(${directProbe.toString()})(${JSON.stringify({expectedUrl:info.href,key})})`);
+    const metadata=ordinaryMetadata.slice();
+    const started=await inspect(`(${directProbe.toString()})(${JSON.stringify({expectedUrl:info.href,key})},${responseDiagnostics.toString()})`);
     if(started.error || started.value!=='started') {setText('directStatus','无法在当前普通页启动测试。');return;}
     for(let i=0;i<500;i++) {
       const result=await inspect(`(()=>{const s=window[${JSON.stringify(key)}];if(!s?.done)return null;delete window[${JSON.stringify(key)}];return s.result;})()`);
       if(result.error)break;
       if(result.value) {
         directReport=safeDirectReport(result.value);
+        directReport.ordinary_request_parameter_presence=metadata;
         $('exportDirect').disabled=false;
         setText('directResult',JSON.stringify(directReport,null,2));
-        setText('directStatus',directReport.received_all_cards?'已返回17项数据，请核对门店和统计日期；尚未标记采集验证成功。':'直接测试未完成，请导出报告定位缺失参数或请求失败。');
+        const first=directReport.results.find(r=>r.status!=='data_received_unverified');
+        setText('directStatus',directReport.received_all_cards?'已返回17项数据，请核对门店和统计日期；尚未标记采集验证成功。':`未取得完整数据：${first?.status||'unknown'}；诊断类别：${first?.diagnostics?.category||'unclassified'}。请导出新版报告。`);
         return;
       }
       await wait(100);

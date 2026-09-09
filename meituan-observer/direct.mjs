@@ -1,18 +1,19 @@
 import {targetSamples} from './sanitize.mjs';
 import {exactRoute, ROUTES} from './replay.mjs';
+import {safeDiagnostics} from './diagnostics.mjs';
 
 // Page-world results are untrusted: reconstruct the export from allowlists.
 export function safeDirectReport(value) {
-  const statuses=new Set(['request_failed','redirect_blocked','login_expired','blocked','business_failed','shape_mismatch','data_received_unverified','data_incomplete','timeout','network_or_parse_failed']);
+  const statuses=new Set(['request_failed','redirect_blocked','login_expired','blocked','business_failed','response_contract_mismatch','shape_mismatch','data_received_unverified','data_incomplete','timeout','network_or_parse_failed']);
   const results=(Array.isArray(value?.results)?value.results:[]).slice(0,3).flatMap(r=>{
     if(!r || !Object.hasOwn(ROUTES,r.route) || !exactRoute('https://eb.meituan.com'+r.route))return [];
     const samples=targetSamples({data:{cards:Array.isArray(r.cards)?r.cards:[]}});
     return [{route:r.route,status:statuses.has(r.status)?r.status:'request_failed',
       http_status:Number.isInteger(r.http_status)&&r.http_status>=0&&r.http_status<=599?r.http_status:null,
       business_status:Number.isSafeInteger(r.business_status)&&Math.abs(r.business_status)<100000?r.business_status:null,
-      cards:samples.cards||[]}];
+      diagnostics:safeDiagnostics(r.diagnostics),cards:samples.cards||[]}];
   });
-  return {version:'0.3.0',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
+  return {version:'0.3.1',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
     started_at:typeof value?.started_at==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.started_at)?value.started_at:null,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
     omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],
@@ -23,7 +24,8 @@ export function safeDirectReport(value) {
 
 // Experimental session-only requests. Missing discovery parameters are NOT guessed.
 // This function is serialized into the inspected page; it has no module dependencies.
-export function directProbe(args) {
+export function directProbe(args, diagnose) {
+  if(typeof diagnose!=='function')return 'diagnostics_unavailable';
   if (location.origin !== 'https://me.meituan.com' || location.href !== args.expectedUrl) return 'page_changed';
   let decoded = location.href;
   for (let i=0;i<3;i++) { try { decoded=decodeURIComponent(decoded); } catch { break; } }
@@ -35,7 +37,7 @@ export function directProbe(args) {
     ['/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition', ['获得获客币','曝光量','浏览量','花费获客币'], true]
   ];
   const before=location.href, focus=document.hasFocus(), controller=new AbortController();
-  const report={version:'0.3.0',mode:'direct_session_probe',started_at:new Date().toISOString(),
+  const report={version:'0.3.1',mode:'direct_session_probe',started_at:new Date().toISOString(),
     source:'fixed_paths_current_browser_session',capture_required:false,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
     omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],results:[],overall:'NOT_VERIFIED'};
@@ -67,10 +69,13 @@ export function directProbe(args) {
             let size=0;const chunks=[];
             while(true) {const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>1000000){await reader.cancel();throw new Error('oversize');}chunks.push(part.value);}
             const bytes=new Uint8Array(size);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length;}
-            const data=JSON.parse(new TextDecoder().decode(bytes));
+            const text=new TextDecoder().decode(bytes);
+            result.diagnostics=diagnose(text);
+            const data=JSON.parse(text);
             result.business_status=Number.isSafeInteger(data?.status)&&Math.abs(data.status)<100000?data.status:null;
             const cards=data?.data?.cards;
-            if(data?.status!==0) result.status='business_failed';
+            if(typeof data?.status!=='number') result.status='response_contract_mismatch';
+            else if(data?.status!==0) result.status='business_failed';
             else if(!Array.isArray(cards)||cards.length!==titles.length||cards.some((c,i)=>c?.title!==titles[i]))result.status='shape_mismatch';
             else {
               result.cards=cards.map((c,i)=>({title:titles[i],value:safeNumber(c.value),unit:units.has(c.unit)?c.unit:null,suffix:units.has(c.suffix)?c.suffix:null}));
