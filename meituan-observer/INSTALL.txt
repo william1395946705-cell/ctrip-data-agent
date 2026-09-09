@@ -1,4 +1,19 @@
-Meituan Controlled Replay Inspector 0.2.0
+Meituan Controlled Replay Inspector 0.3.0
+
+NEW: Direct ordinary-page test (no data-center capture needed)
+Load this folder in chrome://extensions (Developer mode / Load unpacked).
+Disable the previous Meituan inspector to avoid duplicate DevTools panels.
+Keep the authorized Meituan home/orders page open. Close and reopen DevTools,
+select 美团监听, and click 在当前普通页直接测试. No capture step is required.
+Export meituan-direct-report.json with 导出首页测试报告 and share that file.
+For a fresh-page test, manually refresh only the ordinary page and repeat.
+
+This is an experimental session-only request test, NOT a verified collector.
+Only the three observed GET paths and known dateRange=1 are used. Unknown hotel,
+dataScope and verification fields are omitted, not reconstructed from stale URLs.
+Whether the server can derive them from the browser session still needs live testing.
+Any returned data requires hotel/date checks. Errors stop remaining requests.
+The old capture/replay workflow below remains under a collapsed troubleshooting section.
 
 1. Unzip into a permanent folder. In chrome://extensions enable Developer mode,
    choose Load unpacked and select the folder containing manifest.json.

@@ -1,5 +1,6 @@
 import {targetEndpoint, safeRequest, responseStructure} from './sanitize.mjs';
 import {dataCenterPage, ordinaryPage, prepareTemplate, validateSet, pageRequest} from './replay.mjs';
+import {directProbe, safeDirectReport} from './direct.mjs';
 
 const $ = id => document.getElementById(id);
 let running = false;
@@ -42,6 +43,7 @@ function resetCapture() {
   updateTemplateView();
 }
 async function startCapture() {
+  if (replayInFlight) return;
   const epoch = ++generation;
   const info = await pageInfo();
   if (epoch !== generation) return;
@@ -195,3 +197,45 @@ $('exportReplay').onclick = () => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 updateTemplateView();
+
+let directReport=null;
+let lastDirect=0;
+$('direct').onclick=async()=>{
+  if(replayInFlight || Date.now()-lastDirect<30000)return;
+  // Lock before asynchronous evaluation, including against legacy Replay clicks.
+  replayInFlight=true;
+  $('direct').disabled=true;
+  try {
+    const info=await pageInfo();
+    if(!info || !ordinaryPage(info.href)) {setText('directStatus','请停留在已登录美团首页或订单页。');return;}
+    running=false;++generation;templates=new Map();updateTemplateView();
+    directReport=null;$('exportDirect').disabled=true;
+    setText('directResult','');lastDirect=Date.now();
+    setText('directStatus','正在测试当前会话，只发送已发现的三个只读接口，遇到错误会停止。');
+    const key=randomKey();
+    const started=await inspect(`(${directProbe.toString()})(${JSON.stringify({expectedUrl:info.href,key})})`);
+    if(started.error || started.value!=='started') {setText('directStatus','无法在当前普通页启动测试。');return;}
+    for(let i=0;i<500;i++) {
+      const result=await inspect(`(()=>{const s=window[${JSON.stringify(key)}];if(!s?.done)return null;delete window[${JSON.stringify(key)}];return s.result;})()`);
+      if(result.error)break;
+      if(result.value) {
+        directReport=safeDirectReport(result.value);
+        $('exportDirect').disabled=false;
+        setText('directResult',JSON.stringify(directReport,null,2));
+        setText('directStatus',directReport.received_all_cards?'已返回17项数据，请核对门店和统计日期；尚未标记采集验证成功。':'直接测试未完成，请导出报告定位缺失参数或请求失败。');
+        return;
+      }
+      await wait(100);
+    }
+    setText('directStatus','页面通信中断或超时，未取得有效报告。');
+  } finally {
+    replayInFlight=false;updateTemplateView();
+    setTimeout(()=>{$('direct').disabled=false;},Math.max(0,30000-(Date.now()-lastDirect)));
+  }
+};
+$('exportDirect').onclick=()=>{
+  if(!directReport)return;
+  const url=URL.createObjectURL(new Blob([JSON.stringify(directReport,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='meituan-direct-report.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
