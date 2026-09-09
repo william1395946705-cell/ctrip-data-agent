@@ -1,0 +1,18 @@
+Meituan Passive Inspector 0.1.0
+
+1. Unzip into a permanent folder. In chrome://extensions enable Developer mode,
+   choose Load unpacked and select the folder containing manifest.json.
+2. Open your authorized me.meituan.com data center page. Close and reopen DevTools.
+3. Select the "美团监听" DevTools tab (may be under >>), then "开始监听".
+4. Manually refresh the page, keep Yesterday selected, and wait for data to load.
+5. Choose "导出脱敏记录". Share only this sanitized JSON, never a HAR or headers.
+
+No automatic navigation, login, replay, upload or background polling.
+Data stays in panel memory until export. Closing DevTools discards it.
+Only meituan.com/dianping.com requests on the inspected me.meituan.com page
+are considered. Headers and raw string values are omitted. Numeric metric
+samples and ISO dates may remain for manual comparison. Unknown fields retain
+structure only. This discovery package is separate from Ctrip Silent Collector.
+Limits: 200 requests, 1MB response, bounded structure depth and array samples.
+Truncated/omitted content is NOT evidence that an endpoint has no business data.
+Offline tested; actual Chrome request capture still needs user acceptance.
