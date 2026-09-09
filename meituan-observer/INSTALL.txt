@@ -1,4 +1,4 @@
-Meituan Passive Inspector 0.1.0
+Meituan Passive Inspector 0.1.1
 
 1. Unzip into a permanent folder. In chrome://extensions enable Developer mode,
    choose Load unpacked and select the folder containing manifest.json.
@@ -16,3 +16,7 @@ structure only. This discovery package is separate from Ctrip Silent Collector.
 Limits: 200 requests, 1MB response, bounded structure depth and array samples.
 Truncated/omitted content is NOT evidence that an endpoint has no business data.
 Offline tested; actual Chrome request capture still needs user acceptance.
+
+0.1.1: three captured candidate routes retain allowlisted card titles, bounded
+numeric display strings, units and dateRange/dataScope selectors for review.
+Unknown titles/values remain omitted; no endpoint is enabled for replay.

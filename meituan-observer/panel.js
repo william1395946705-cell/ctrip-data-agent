@@ -28,14 +28,14 @@ chrome.devtools.network.onRequestFinished.addListener(async entry => {
   accepted++;
   entry.getContent((content, encoding) => {
     if (!running || epoch !== generation) return;
-    record.response_schema = responseStructure(content, encoding);
+    record.response_schema = responseStructure(content, encoding, entry.request.url);
     records.push(record);
     $('list').textContent = records.map(r=>`${r.http_status} ${r.method} ${r.request_url} [${r.response_schema.type}]`).join('\n');
     status(`已记录 ${records.length} 条；最多接收200条。页面加载完成后可导出。`);
   });
 });
 $('export').onclick = () => {
-  const blob = new Blob([JSON.stringify({version:'0.1.0',mode:'passive',records},null,2)],{type:'application/json'});
+  const blob = new Blob([JSON.stringify({version:'0.1.1',mode:'passive',records},null,2)],{type:'application/json'});
   const url = URL.createObjectURL(blob), a = document.createElement('a');
   a.href = url; a.download = 'meituan-discovery-sanitized.json'; a.click();
   setTimeout(()=>URL.revokeObjectURL(url),1000);

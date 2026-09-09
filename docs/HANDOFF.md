@@ -1,5 +1,11 @@
 # Project Handoff
 
+## 2026-09-09 美团首次捕获分析及监听器0.1.1
+
+- 收到190条用户提供的脱敏记录，识别 eb.meituan.com 上 businessData、score、projectEffect/customerAcquisition 三类 GET 候选，HTTP均为200，分别返回10/3/4张卡片。真实用途及昨日数据仍 NOT VERIFIED，详见 docs/MEITUAN_DISCOVERY.md。
+- 0.1.0 删除了字符串类型业务数值，无法完成页面抽样比对。0.1.1仅针对候选路径保留白名单标题、有限数值字符串和单位；保留有限 dateRange/dataScope 查询值、实际短版本段。不扩大为自动请求，不保留凭据或真实业务样本到仓库。
+- 新增白名单投影与10张卡片测试，未知字符串及身份继续省略。下一步需要0.1.1人工再捕获；不能把候选名称或HTTP200当作完整采集成功。
+
 ## 2026-09-09 美团昨日数据被动监听准备
 
 - 分支 codex/meituan-passive-observer 从最新 main 创建，使用独立工作树，不覆盖正在使用的携程 0.3.3 目录或尚未合并的修复分支。

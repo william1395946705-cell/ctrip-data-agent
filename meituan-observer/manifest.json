@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Meituan Passive Inspector",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "授权测试用：仅在开发者工具中被动观察美团数据中心请求，导出脱敏结构。",
   "devtools_page": "devtools.html"
 }
