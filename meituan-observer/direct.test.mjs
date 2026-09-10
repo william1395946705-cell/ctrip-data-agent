@@ -63,3 +63,10 @@ test('HTTP 200 alternate error envelope retains diagnostics and stops without su
   assert.equal(JSON.stringify(report).includes('SECRET'),false);
   assert.equal(report.received_all_cards,false);
 });
+test('direct report exposes only fixed discovery parameter categories',()=>{
+  const report=safeDirectReport({results:[],current_page_unchanged:true,focus_state_unchanged:true});
+  assert.deepEqual(report.discovery_parameter_evidence.identity,['poiId','partnerId']);
+  assert.deepEqual(report.discovery_parameter_evidence.data_scope,['dataScope']);
+  assert.deepEqual(report.discovery_parameter_evidence.runtime,['yodaReady','csecplatform','csecversion']);
+  assert.equal(JSON.stringify(report).includes('PRIVATE'),false);
+});

@@ -2,6 +2,17 @@ import {targetSamples} from './sanitize.mjs';
 import {exactRoute, ROUTES} from './replay.mjs';
 import {safeDiagnostics} from './diagnostics.mjs';
 
+const DISCOVERY_PARAMETER_EVIDENCE=Object.freeze({
+  identity:['poiId','partnerId'],
+  data_scope:['dataScope'],
+  runtime:['yodaReady','csecplatform','csecversion'],
+  additional_unknown_by_route:Object.freeze({
+    '/api/v1/ebooking/home/businessData':1,
+    '/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/score':0,
+    '/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition':0
+  })
+});
+
 // Page-world results are untrusted: reconstruct the export from allowlists.
 export function safeDirectReport(value) {
   const statuses=new Set(['merchant_authorization_failed','request_failed','redirect_blocked','login_expired','blocked','business_failed','response_contract_mismatch','shape_mismatch','data_received_unverified','data_incomplete','timeout','network_or_parse_failed']);
@@ -13,10 +24,11 @@ export function safeDirectReport(value) {
       business_status:Number.isSafeInteger(r.business_status)&&Math.abs(r.business_status)<100000?r.business_status:null,
       diagnostics:safeDiagnostics(r.diagnostics),cards:samples.cards||[]}];
   });
-  return {version:'0.3.2',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
+  return {version:'0.3.3',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
     started_at:typeof value?.started_at==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.started_at)?value.started_at:null,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
     omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],
+    discovery_parameter_evidence:DISCOVERY_PARAMETER_EVIDENCE,
     results,current_page_unchanged:value?.current_page_unchanged===true,
     focus_state_unchanged:value?.focus_state_unchanged===true,
     received_all_cards:results.length===3&&new Set(results.map(r=>r.route)).size===3&&results.every(r=>r.status==='data_received_unverified'&&r.cards.length===ROUTES[r.route]&&r.cards.every(c=>c.title&&c.value!==null&&!['-','--','—'].includes(c.value)))};
@@ -26,6 +38,7 @@ export function safeDirectReport(value) {
 // This function is serialized into the inspected page; it has no module dependencies.
 export function directProbe(args, diagnose) {
   if(typeof diagnose!=='function')return 'diagnostics_unavailable';
+  const discoveryParameterEvidence={identity:['poiId','partnerId'],data_scope:['dataScope'],runtime:['yodaReady','csecplatform','csecversion'],additional_unknown_by_route:{'/api/v1/ebooking/home/businessData':1,'/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/score':0,'/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition':0}};
   if (location.origin !== 'https://me.meituan.com' || location.href !== args.expectedUrl) return 'page_changed';
   let decoded = location.href;
   for (let i=0;i<3;i++) { try { decoded=decodeURIComponent(decoded); } catch { break; } }
@@ -37,10 +50,11 @@ export function directProbe(args, diagnose) {
     ['/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition', ['获得获客币','曝光量','浏览量','花费获客币'], true]
   ];
   const before=location.href, focus=document.hasFocus(), controller=new AbortController();
-  const report={version:'0.3.2',mode:'direct_session_probe',started_at:new Date().toISOString(),
+  const report={version:'0.3.3',mode:'direct_session_probe',started_at:new Date().toISOString(),
     source:'fixed_paths_current_browser_session',capture_required:false,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
-    omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],results:[],overall:'NOT_VERIFIED'};
+    omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],
+    discovery_parameter_evidence:discoveryParameterEvidence,results:[],overall:'NOT_VERIFIED'};
   const slot={done:false,result:null,cancel:()=>controller.abort()};
   window[args.key]=slot;
   const cleanup=setTimeout(()=>{controller.abort();delete window[args.key];},65000);
