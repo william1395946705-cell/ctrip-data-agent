@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {responseDiagnostics,safeDiagnostics,parameterPresence} from './diagnostics.mjs';
+test('code alone is not proof of merchant authorization denial',()=>{
+  assert.equal(responseDiagnostics({code:33202,error:{msg:'other'}}).category,'unclassified');
+  assert.equal(responseDiagnostics({code:400,error:{msg:'鉴权失败'}}).category,'permission_hint');
+});
+test('ordinary metadata identifies only exact reviewed target routes',()=>{
+  const route='/api/v1/ebooking/home/businessData';
+  assert.equal(parameterPresence({request:{url:'https://eb.meituan.com'+route+'?poiId=SECRET',method:'GET'}}).route,route);
+  for(const url of ['https://me.meituan.com'+route,'https://eb.meituan.com/private/SECRET'])assert.equal(parameterPresence({request:{url,method:'GET'}}).route,null);
+});
 
 test('missing status distinguishes alternate numeric envelope without exporting message',()=>{
   const x=responseDiagnostics(JSON.stringify({code:'400',message:'Missing required poiId: PRIVATE',data:null,token:'SECRET'}));

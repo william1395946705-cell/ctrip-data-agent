@@ -242,7 +242,7 @@ $('direct').onclick=async()=>{
         $('exportDirect').disabled=false;
         setText('directResult',JSON.stringify(directReport,null,2));
         const first=directReport.results.find(r=>r.status!=='data_received_unverified');
-        setText('directStatus',directReport.received_all_cards?'已返回17项数据，请核对门店和统计日期；尚未标记采集验证成功。':`未取得完整数据：${first?.status||'unknown'}；诊断类别：${first?.diagnostics?.category||'unclassified'}。请导出新版报告。`);
+        setText('directStatus',first?.status==='merchant_authorization_failed'?'商家鉴权失败（33202）：当前请求未通过商家账号校验，已停止后续请求。门店参数与成功请求的对应关系仍需核实。':directReport.received_all_cards?'已返回17项数据，请核对门店和统计日期；尚未标记采集验证成功。':`未取得完整数据：${first?.status||'unknown'}；诊断类别：${first?.diagnostics?.category||'unclassified'}。请导出新版报告。`);
         return;
       }
       await wait(100);

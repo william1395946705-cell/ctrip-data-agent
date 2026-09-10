@@ -4,6 +4,16 @@ import vm from 'node:vm';
 import {directProbe,safeDirectReport} from './direct.mjs';
 import {responseDiagnostics} from './diagnostics.mjs';
 const titles=[['引流价','曝光量','浏览人数','支付转化率','支付订单数','销售间夜','销售均价','销售额','入住间夜','满房率'],['HOS分','信息分','评价分'],['获得获客币','曝光量','浏览量','花费获客币']];
+test('observed merchant denial stops after one request and preserves safe error code',async()=>{
+  const x=await run({payload:{code:33202,error:{msg:'商家账号水平鉴权失败'},token:'SECRET'}});
+  const report=safeDirectReport(x.report);
+  assert.equal(x.calls.length,1);
+  assert.equal(report.results[0].status,'merchant_authorization_failed');
+  assert.equal(report.results[0].business_status,33202);
+  assert.equal(report.received_all_cards,false);
+  assert.equal(JSON.stringify(report).includes('SECRET'),false);
+  assert.equal(JSON.stringify(report).includes('商家账号水平鉴权失败'),false);
+});
 async function run({http=200,status=0,html=false,href='https://me.meituan.com/home',change=false,dash=false,network=false,payload}={}) {
   const calls=[];const timers=[];const key='__mt_probe_0123456789abcdef0123456789abcdef';
   const context={location:{href,origin:new URL(href).origin},document:{hasFocus:()=>false},window:{},AbortController,TextDecoder,Uint8Array,URL,
