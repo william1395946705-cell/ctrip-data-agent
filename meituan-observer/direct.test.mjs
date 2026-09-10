@@ -14,7 +14,7 @@ test('observed merchant denial stops after one request and preserves safe error 
   assert.equal(JSON.stringify(report).includes('SECRET'),false);
   assert.equal(JSON.stringify(report).includes('商家账号水平鉴权失败'),false);
 });
-async function run({http=200,status=0,html=false,href='https://me.meituan.com/home',change=false,dash=false,network=false,payload}={}) {
+async function run({http=200,status=0,html=false,href='https://me.meituan.com/home',change=false,dash=false,network=false,payload,identity,popup=false}={}) {
   const calls=[];const timers=[];const key='__mt_probe_0123456789abcdef0123456789abcdef';
   const context={location:{href,origin:new URL(href).origin},document:{hasFocus:()=>false},window:{},AbortController,TextDecoder,Uint8Array,URL,
     setTimeout:fn=>{timers.push(fn);return 1;},clearTimeout:()=>{},
@@ -25,7 +25,7 @@ async function run({http=200,status=0,html=false,href='https://me.meituan.com/ho
       return new Response(html?'<html>SECRET</html>':JSON.stringify(payload??{status,data:{cards},token:'SECRET'}),{status:http});
     }};
   vm.createContext(context);
-  const started=vm.runInContext(`(${directProbe.toString()})(${JSON.stringify({expectedUrl:href,key})},${responseDiagnostics.toString()})`,context);
+  const started=vm.runInContext(`(${directProbe.toString()})(${JSON.stringify({expectedUrl:href,key,identity})},${popup?'undefined':responseDiagnostics.toString()})`,context);
   for(let i=0;i<100&&!context.window[key]?.done&&started==='started';i++)await new Promise(r=>setImmediate(r));
   return {started,calls,report:context.window[key]?.result,timers,context,key};
 }
@@ -69,4 +69,14 @@ test('direct report exposes only fixed discovery parameter categories',()=>{
   assert.deepEqual(report.discovery_parameter_evidence.data_scope,['dataScope']);
   assert.deepEqual(report.discovery_parameter_evidence.runtime,['yodaReady','csecplatform','csecversion']);
   assert.equal(JSON.stringify(report).includes('PRIVATE'),false);
+});
+test('popup passes only observed business IDs and omits them from the report',async()=>{
+  const x=await run({identity:{poiId:'123456',partnerId:'789012'},popup:true});
+  assert.equal(x.calls.length,3);
+  for(const c of x.calls){const u=new URL(c.url);assert.equal(u.searchParams.get('poiId'),'123456');assert.equal(u.searchParams.get('partnerId'),'789012');assert.equal(u.searchParams.has('yodaReady'),false);}
+  assert.equal(safeDirectReport(x.report).received_all_cards,true);
+  assert.equal(JSON.stringify(safeDirectReport(x.report)).includes('123456'),false);
+  const denied=await run({identity:{poiId:'123456',partnerId:'789012'},popup:true,payload:{code:33202,error:{msg:'商家账号水平鉴权失败'}}});
+  assert.equal(denied.calls.length,1);assert.equal(denied.report.results[0].status,'merchant_authorization_failed');
+  assert.equal((await run({identity:{poiId:'bad',partnerId:'1'},popup:true})).calls.length,0);
 });

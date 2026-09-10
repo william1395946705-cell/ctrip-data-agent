@@ -1,3 +1,21 @@
+美团昨日采集 0.4.0 授权测试版
+
+普通使用（无需打开 DevTools）：
+1. 加载含 manifest.json 的文件夹；已使用固定目录的用户重新加载扩展即可。
+   新增美团站点权限需要浏览器确认。
+2. 在已登录美团首页或订单页点击工具栏扩展图标。
+3. 弹窗显示一组门店标识候选后，点击“使用当前页候选试采”。
+4. 未找到候选时，可手动刷新当前普通页面再检查，不需要进入数据中心。
+5. 导出弹窗报告；若收到数据，仍需核对门店和昨日日期。
+
+候选来自当前文档及美团子页面最近10分钟的资源请求中成对的 poiId/partnerId。
+冲突、缺失和采集期间身份变化会停止或丢弃结果。名称绑定仍未验证。
+dataScope 和运行时安全参数缺少构造证据，仍不拼入请求。33202仍可能发生。
+仅人工执行三个已发现GET，无定时采集。仅保存最近脱敏报告，可能来自其他门店。
+身份值、原始URL、Cookie、Token和请求头不保存或导出。
+独立Chromium测试通过；真实酒店普通Chrome结果仍 NOT_VERIFIED。
+
+以下为旧版DevTools排查流程，仅供开发对照，普通弹窗不依赖此流程：
 Meituan Controlled Replay Inspector 0.3.1
 
 0.3.1 adds bounded error diagnostics and passive ordinary-page parameter-name presence.

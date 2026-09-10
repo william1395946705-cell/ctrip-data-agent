@@ -24,7 +24,7 @@ export function safeDirectReport(value) {
       business_status:Number.isSafeInteger(r.business_status)&&Math.abs(r.business_status)<100000?r.business_status:null,
       diagnostics:safeDiagnostics(r.diagnostics),cards:samples.cards||[]}];
   });
-  return {version:'0.3.3',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
+  return {version:'0.4.0',mode:'direct_session_probe',overall:'NOT_VERIFIED',capture_required:false,
     started_at:typeof value?.started_at==='string'&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value.started_at)?value.started_at:null,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
     omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],
@@ -37,7 +37,15 @@ export function safeDirectReport(value) {
 // Experimental session-only requests. Missing discovery parameters are NOT guessed.
 // This function is serialized into the inspected page; it has no module dependencies.
 export function directProbe(args, diagnose) {
-  if(typeof diagnose!=='function')return 'diagnostics_unavailable';
+  // scripting.executeScript cannot serialize a function argument. The popup
+  // needs only bounded error classification; the legacy panel passes full diagnostics.
+  if(typeof diagnose!=='function')diagnose=text=>{
+    let d;try{d=JSON.parse(text);}catch{return {format:'non_json',category:'unclassified'};}
+    return {format:'json',category:d?.code===33202&&d?.error?.msg==='商家账号水平鉴权失败'?'merchant_authorization_failed':'unclassified',
+      codes:Number.isSafeInteger(d?.code)&&Math.abs(d.code)<100000?[{path:'code',type:'number',value:d.code}]:[]};
+  };
+  const identity=args.identity;
+  if(identity && ![identity.poiId,identity.partnerId].every(v=>typeof v==='string'&&/^[1-9]\d{0,17}$/.test(v)))return 'identity_invalid';
   const discoveryParameterEvidence={identity:['poiId','partnerId'],data_scope:['dataScope'],runtime:['yodaReady','csecplatform','csecversion'],additional_unknown_by_route:{'/api/v1/ebooking/home/businessData':1,'/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/score':0,'/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition':0}};
   if (location.origin !== 'https://me.meituan.com' || location.href !== args.expectedUrl) return 'page_changed';
   let decoded = location.href;
@@ -50,7 +58,7 @@ export function directProbe(args, diagnose) {
     ['/api/shepherdGw/bizDatacenter/hotel/eb/dataCenter/home/projectEffect/customerAcquisition', ['获得获客币','曝光量','浏览量','花费获客币'], true]
   ];
   const before=location.href, focus=document.hasFocus(), controller=new AbortController();
-  const report={version:'0.3.3',mode:'direct_session_probe',started_at:new Date().toISOString(),
+  const report={version:'0.4.0',mode:'direct_session_probe',started_at:new Date().toISOString(),
     source:'fixed_paths_current_browser_session',capture_required:false,
     hotel_identity_verification:'NOT_VERIFIED',statistics_date_verification:'NOT_VERIFIED',
     omitted_parameters:['hotel_identity','dataScope','runtime_verification_fields'],
@@ -71,7 +79,10 @@ export function directProbe(args, diagnose) {
         const result={route:path,status:'request_failed',http_status:null,business_status:null,cards:[]};
         const timeout=setTimeout(()=>controller.abort(),15000);
         try {
-          const response=await fetch('https://eb.meituan.com'+path+(yesterday?'?dateRange=1':''),
+          const requestUrl=new URL('https://eb.meituan.com'+path);
+          if(yesterday)requestUrl.searchParams.set('dateRange','1');
+          if(identity){requestUrl.searchParams.set('poiId',identity.poiId);requestUrl.searchParams.set('partnerId',identity.partnerId);}
+          const response=await fetch(requestUrl.href,
             {method:'GET',credentials:'include',redirect:'manual',signal:controller.signal});
           result.http_status=response.status;
           if (response.type==='opaqueredirect' || response.status>=300&&response.status<400) result.status='redirect_blocked';

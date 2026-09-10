@@ -1,5 +1,17 @@
 # Project Handoff
 
+## 2026-09-10 普通弹窗及身份候选试采 0.4.0
+
+- 新分支 codex/meituan-popup-identity 从最新 main 创建并保留 PR #12 依赖；不修改携程扩展。
+- 用户0.3.3报告证实普通页自然请求已存在成对 poiId / partnerId；直接测试仍返回 HTTP200/code33202。参数差异不是已证明的根因，不应宣称补齐ID必然成功。
+- 新增普通 action 弹窗、MV3 worker 和本地最近脱敏报告，正常试采不再依赖DevTools。新增权限仅 scripting/storage 及两个已发现美团域名。
+- 在现有顶层和美团子页面的资源时间记录内提取最近10分钟数字型成对身份候选；冲突、重复参数和过期候选拒绝使用，跨文档及采集后身份改变丢弃结果。不读取Cookie、headers、localStorage或Profile。
+- 人工点击试采才将唯一候选ID带入三个已发现GET接口；仍不补猜dataScope、安全运行时字段。身份名称绑定、日期和整套实机成功均 NOT_VERIFIED；候选仅在内存使用，不导出不存储。
+- 旧无ID DevTools测试保留作对照。普通弹窗失败与有数据待核对分别显示，无自动采集调度。
+- Node美团30/30、Python45/45、携程24/24及compileall通过。独立临时Chromium扩展实测通过弹窗→worker→页面带ID请求→33202错误→安全存储完整链路；所有网络被测试夹具拦截，不能当真实酒店成功。
+- 打包脚本 scripts/package_meituan.py 输出 dist/meituan-popup-0.4.0 及ZIP；manifest位于ZIP根，运行文件白名单。现有固定加载目录可原地更新后重新加载，需确认新增站点权限。
+- 下一步真实Chrome普通首页点击试采并核对17项门店/昨日数据；失败继续按业务码与缺参证据定位，未验证前不启动自动调度。
+
 ## 2026-09-10 商家鉴权失败诊断 0.3.2
 
 - 用户提供的真实响应为 HTTP 200、code 33202、商家账号水平鉴权失败。此前误归为 response_contract_mismatch；现按精确 code + message 识别 merchant_authorization_failed，停止后续请求。不导出原始错误文本。
