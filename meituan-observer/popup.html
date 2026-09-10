@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<title>美团昨日采集</title><link rel="stylesheet" href="popup.css">
+<body><h1>美团昨日采集 <small>0.4.0 测试版</small></h1>
+<p>在已登录的美团首页或订单页使用，无需打开开发者工具。</p>
+<p id="identity">正在检查当前页面…</p>
+<p>页面请求中的门店标识属于候选，尚未与门店名称绑定；测试返回的数据需核对所属门店及统计日期。</p>
+<button id="collect" disabled>使用当前页候选试采</button>
+<button id="refresh">检查页面状态</button>
+<p id="status" role="status"></p>
+<h2>最近一次测试（可能来自其他页面）</h2>
+<p id="last">尚无记录</p>
+<button id="export" disabled>导出脱敏报告</button>
+<script type="module" src="popup.mjs"></script></body></html>

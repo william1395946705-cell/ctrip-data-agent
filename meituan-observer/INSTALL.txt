@@ -1,0 +1,68 @@
+美团昨日采集 0.4.0 授权测试版
+
+普通使用（无需打开 DevTools）：
+1. 加载含 manifest.json 的文件夹；已使用固定目录的用户重新加载扩展即可。
+   新增美团站点权限需要浏览器确认。
+2. 在已登录美团首页或订单页点击工具栏扩展图标。
+3. 弹窗显示一组门店标识候选后，点击“使用当前页候选试采”。
+4. 未找到候选时，可手动刷新当前普通页面再检查，不需要进入数据中心。
+5. 导出弹窗报告；若收到数据，仍需核对门店和昨日日期。
+
+候选来自当前文档及美团子页面最近10分钟的资源请求中成对的 poiId/partnerId。
+冲突、缺失和采集期间身份变化会停止或丢弃结果。名称绑定仍未验证。
+dataScope 和运行时安全参数缺少构造证据，仍不拼入请求。33202仍可能发生。
+仅人工执行三个已发现GET，无定时采集。仅保存最近脱敏报告，可能来自其他门店。
+身份值、原始URL、Cookie、Token和请求头不保存或导出。
+独立Chromium测试通过；真实酒店普通Chrome结果仍 NOT_VERIFIED。
+
+以下为旧版DevTools排查流程，仅供开发对照，普通弹窗不依赖此流程：
+Meituan Controlled Replay Inspector 0.3.1
+
+0.3.1 adds bounded error diagnostics and passive ordinary-page parameter-name presence.
+After loading the new folder, reopen DevTools / 美团监听, manually refresh the HOME
+page, then run the direct test. Export meituan-direct-report.json.
+No data-center visit is needed. This diagnostic update does not claim the server
+request failure is fixed. It identifies known error field types, numeric codes and
+message categories without retaining raw messages, headers or parameter values.
+
+NEW: Direct ordinary-page test (no data-center capture needed)
+Load this folder in chrome://extensions (Developer mode / Load unpacked).
+Disable the previous Meituan inspector to avoid duplicate DevTools panels.
+Keep the authorized Meituan home/orders page open. Close and reopen DevTools,
+select 美团监听, and click 在当前普通页直接测试. No capture step is required.
+Export meituan-direct-report.json with 导出首页测试报告 and share that file.
+For a fresh-page test, manually refresh only the ordinary page and repeat.
+
+This is an experimental session-only request test, NOT a verified collector.
+Only the three observed GET paths and known dateRange=1 are used. Unknown hotel,
+dataScope and verification fields are omitted, not reconstructed from stale URLs.
+Whether the server can derive them from the browser session still needs live testing.
+Any returned data requires hotel/date checks. Errors stop remaining requests.
+The old capture/replay workflow below remains under a collapsed troubleshooting section.
+
+1. Unzip into a permanent folder. In chrome://extensions enable Developer mode,
+   choose Load unpacked and select the folder containing manifest.json.
+2. Open your authorized me.meituan.com data center page. Close and reopen DevTools.
+3. Select the "美团监听" DevTools tab (may be under >>), then "开始捕获昨日请求".
+4. Manually refresh the data-center page, keep Yesterday selected, and wait for all three target requests to load.
+5. Manually switch the same hotel to an ordinary page (home/orders/etc.). Tick the same-hotel confirmation and click
+   "在当前普通页执行一次". This sends only the three exact, naturally observed GET URLs from the current page session.
+6. Choose "导出 Replay 报告" for a sanitized comparison, or "导出脱敏发现" for the discovery record.
+   Share only these JSON files, never a HAR, headers, or browser profile.
+
+No automatic navigation, login, upload, scheduled polling, clicks, keyboard input or focus changes.
+Replay is a single manual, read-only run and is disabled after it completes. Data stays in panel memory until export.
+Closing DevTools discards it. Raw runtime request URLs (including session-bearing query values) are never exported.
+Only meituan.com/dianping.com requests on the inspected me.meituan.com page
+are considered. Headers and raw string values are omitted. Numeric metric
+samples and ISO dates may remain for manual comparison. Unknown fields retain
+structure only. This discovery package is separate from Ctrip Silent Collector.
+Limits: 200 requests, 1MB response, bounded structure depth and array samples.
+Truncated/omitted content is NOT evidence that an endpoint has no business data.
+Offline tested; actual Chrome request capture still needs user acceptance.
+
+0.2.0: the three exact discovered routes can be captured in memory and replayed
+once from a manually confirmed ordinary page. The current page URL, focus state,
+HTTP status, business status, card count and bounded old/replay values are reported.
+Cross-origin/CORS, login expiry, redirects, shape changes and network errors remain
+NOT_VERIFIED; there is no bypass or fallback navigation. Unknown titles/values remain omitted.

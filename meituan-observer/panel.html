@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><title>美团昨日数据验证</title>
+<body>
+<h2>美团昨日数据 · 开发诊断 0.4.0</h2>
+<p>普通测试请使用浏览器工具栏的美团扩展弹窗。本页保留旧版不带门店参数的对照测试。</p>
+<p>本版补充失败原因诊断。打开本面板后可手动刷新当前首页，记录自然请求的参数名称（不记录值），再点击直接测试。</p>
+<p>停留在已登录的美团首页或订单页即可测试，不需要先捕获数据中心请求。</p>
+<button id="direct">在当前普通页直接测试</button>
+<button id="exportDirect" disabled>导出首页测试报告</button>
+<p id="directStatus">本入口测试当前登录会话能否补足请求参数。返回数据仍需核对门店和日期。</p>
+<pre id="directResult"></pre>
+<hr>
+<details><summary>旧版捕获与对照工具（排查时使用）</summary>
+<p>先在美团数据中心的“昨日”页面启动监听并手动刷新；三类自然请求齐全后，再由测试人员手动切到同一家门店的普通页面进行一次只读重放。</p>
+<button id="start">开始捕获昨日请求</button>
+<button id="stop">停止捕获</button>
+<button id="export">导出脱敏发现</button>
+<p id="captureStatus">尚未开始。当前页应是美团数据中心的“昨日”页面。</p>
+<pre id="templates"></pre>
+<hr>
+<h3>普通页受控 Replay</h3>
+<label><input id="sameHotel" type="checkbox"> 我确认当前页仍是同一家门店，并且允许在当前页执行一次只读验证</label>
+<br><button id="replay" disabled>在当前普通页执行一次</button>
+<button id="exportReplay" disabled>导出 Replay 报告</button>
+<p id="replayStatus">需要先捕获三个目标请求，再手动切到首页、订单等普通美团页面。</p>
+<pre id="replayResult"></pre>
+<p>重放不导航、不点击、不输入、不读取请求头，不保存 Cookie/Token/门店身份。原始运行时 URL 只在本机当前 DevTools 进程内存中使用，不进入导出文件。</p>
+</details><script type="module" src="panel.js"></script>
+</body></html>
