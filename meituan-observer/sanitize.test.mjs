@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {safeRequest,structure,responseStructure,allowedUrl,targetSamples} from './sanitize.mjs';
+test('target capture retains reviewed parameter names but never identity or credential values',()=>{
+  const result=safeRequest({request:{url:'https://eb.meituan.com/api/v1/ebooking/home/businessData?poiId=PRIVATE&partnerId=PRIVATE&dateRange=1&dataScope=PRIVATE&token=SECRET',method:'GET'}});
+  assert.deepEqual(result.target_parameter_presence.present,['poiId','partnerId','dateRange','dataScope']);
+  assert.equal(result.target_parameter_presence.route,'/api/v1/ebooking/home/businessData');
+  for(const value of ['PRIVATE','SECRET']) assert.equal(JSON.stringify(result).includes(value),false);
+  assert.equal(safeRequest({request:{url:'https://me.meituan.com/other?poiId=PRIVATE',method:'GET'}}).target_parameter_presence,null);
+});
 test('reject unrelated origins and credentials',()=>{
   for(const u of ['https://meituan.com.evil.test/a','http://me.meituan.com/a','https://u:p@me.meituan.com/a']) assert.equal(allowedUrl(u),false);
   assert.equal(allowedUrl('https://api.meituan.com/a'),true);

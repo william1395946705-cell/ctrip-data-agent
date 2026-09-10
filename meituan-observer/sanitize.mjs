@@ -1,4 +1,5 @@
 // Independent DevTools boundary: raw HAR objects/headers never cross into output.
+import {parameterPresence} from './diagnostics.mjs';
 const secret = /cookie|auth|token|session|csrf|password|secret|credential|ticket|signature|device|trace|account|user|phone|mobile|email|address|name|uuid|guid|(?:^|_)id$|Id$|ID$|partner|poi/i;
 const metric = /^(?:[a-z_]*(?:exposure|browse|visitor|conversion|rate|price|amount|revenue|score|rank|roomnight|room_night|ordercount|order_count|ordernum|order_num|uv|pv)[a-z_]*|totalRecords|totalPages|count|code|rcode)$/i;
 export function allowedUrl(raw) {
@@ -70,6 +71,7 @@ export function safeRequest(entry) {
   }
   const mime = String(entry.response?.content?.mimeType || '').split(';')[0];
   return {request_url:u.origin+path, method:['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].includes(req.method)?req.method:'OTHER',
+    target_parameter_presence:target ? parameterPresence(entry) : null,
     query_fields:[...new Set([...u.searchParams.keys()].map(keyName))].slice(0,100), payload_schema:payload,
     query_samples:target ? Object.fromEntries(['dateRange','dataScope'].filter(k=>u.searchParams.has(k)).map(k=>{
       const v=u.searchParams.get(k);
